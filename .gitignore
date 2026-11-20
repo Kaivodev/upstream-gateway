@@ -1,0 +1,10 @@
+/.local/
+target/
+/dist/
+*.pem
+*.key
+.DS_Store
+.env
+.env.local
+# Host crates are fetched from Cargo.lock and never vendored into git. Plugin crates live in guest/vendor.
+/vendor/

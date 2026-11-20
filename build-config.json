@@ -1,0 +1,100 @@
+{
+  "rust_version": "1.99.1",
+  "target": "wasm32-unknown-unknown",
+  "wasm_tools_version": "1.263.0",
+  "wit_bindgen_cli_version": "0.63.0",
+  "hosts": [
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu"
+  ],
+  "features": [],
+  "profile": {
+    "codegen-units": 1,
+    "incremental": false,
+    "lto": "fat",
+    "opt-level": "z",
+    "panic": "abort",
+    "strip": "symbols"
+  },
+  "rustflags": [
+    "--remap-path-prefix=$WORKSPACE=/workspace",
+    "--remap-path-prefix=$TOOLCHAIN=/toolchain",
+    "--remap-path-prefix=$BUILD=/build"
+  ],
+  "component_args": [
+    "component",
+    "new",
+    "$CORE",
+    "-o",
+    "$COMPONENT"
+  ],
+  "inputs": [
+    "guest/Cargo.toml",
+    "guest/Cargo.lock",
+    "guest/.cargo/config.toml",
+    "rust-toolchain.toml",
+    "wit/kaivo-upstream.wit",
+    "build-config.json",
+    "scripts/bindings.sh",
+    "scripts/check-build-inputs.py"
+  ],
+  "registry_crates": {
+    "itoa": {
+      "version": "1.0.19",
+      "checksum": "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4",
+      "features": [],
+      "vendor_index_sha256": "641c01bb0c5754e691b22b4806e1b430224edd5e0e49992b4f88963e7176fd87"
+    },
+    "memchr": {
+      "version": "2.8.3",
+      "checksum": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+      "features": [
+        "alloc",
+        "std"
+      ],
+      "vendor_index_sha256": "7a772ae111fd9370fe127ad0d65c00ccbc5030fe37c84abc879a7b442e5ac6a0"
+    },
+    "serde": {
+      "version": "1.0.229",
+      "checksum": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+      "features": [
+        "default",
+        "std"
+      ],
+      "vendor_index_sha256": "2f28ef2a3673ec67bc10893175f06c7e58859751ce194faf9a5a58f724e41d8f"
+    },
+    "serde_core": {
+      "version": "1.0.229",
+      "checksum": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+      "features": [
+        "result",
+        "std"
+      ],
+      "vendor_index_sha256": "49369d1557e28ef1fe6d84fdc96166f2042a71fa133b92a6517d048168053f81"
+    },
+    "serde_json": {
+      "version": "1.0.154",
+      "checksum": "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
+      "features": [
+        "default",
+        "std"
+      ],
+      "vendor_index_sha256": "56478380f2f100da578f3b13bdaa8bd10700ac5a7d2bbd1b4557d8651d60754c"
+    },
+    "wit-bindgen": {
+      "version": "0.63.0",
+      "checksum": "b85a987ab61d365382d25c7d47e26edd48941b3bf6e3fbf76eff918bc71dab06",
+      "features": [
+        "realloc"
+      ],
+      "vendor_index_sha256": "da7101b23c76a7c7589fc7cd4099f3cafd447488a89b08dce263b3e32abb879c"
+    },
+    "zmij": {
+      "version": "1.0.23",
+      "checksum": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+      "features": [],
+      "vendor_index_sha256": "eb334fd166f2ca927331a2019637bcd22d379d5f3a3d9086667b771af7b682f8"
+    }
+  },
+  "workspace_build_scripts": []
+}

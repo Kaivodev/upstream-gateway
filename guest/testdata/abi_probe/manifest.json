@@ -1,0 +1,36 @@
+{
+  "type": "payment",
+  "code": "abi_probe",
+  "version": "0.3.0",
+  "abi_version": 3,
+  "domains": [
+    "example.test"
+  ],
+  "secrets": {
+    "shared": "shared"
+  },
+  "public_keys": [],
+  "config": {
+    "mode": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "capabilities": [
+    "query_payment",
+    "route_callback",
+    "verify_callback"
+  ],
+  "callback": {
+    "content_types": [
+      "application/x-www-form-urlencoded"
+    ],
+    "ack_status": 200,
+    "ack_body": "success",
+    "ack_content_type": "text/plain",
+    "methods": [
+      "POST"
+    ],
+    "allow_query": false
+  }
+}

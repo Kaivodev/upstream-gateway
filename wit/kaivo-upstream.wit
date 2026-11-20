@@ -1,0 +1,84 @@
+package kaivo:upstream@3.0.0;
+
+interface host {
+    record utc-time { seconds: s64, nanos: u32 }
+    variant part { data(list<u8>), secret(string) }
+    config: func(name: string) -> string;
+    sign: func(algorithm: string, key: option<string>, parts: list<part>) -> string;
+    verify: func(algorithm: string, key: string, parts: list<part>, signature: string) -> bool;
+    equal: func(a: string, b: string) -> bool;
+    log: func(level: string, message: string, fields: list<tuple<string, string>>) -> bool;
+    now: func() -> utc-time;
+    random: func(len: u32) -> list<u8>;
+}
+
+interface types {
+    use host.{utc-time};
+    type headers = list<tuple<string, list<string>>>;
+    record money { amount: string, currency: string }
+    record http-request { method: string, url: string, headers: headers, body: list<u8> }
+    record http-response { status: u16, headers: headers, body: list<u8> }
+
+    record create-payment-input {
+        order-id: string, money: money, method: string, callback-url: string,
+        bank-mode: option<string>, instruction: option<string>,
+    }
+    record payment-input { order-id: string, money: money }
+    record refund-input { order-id: string, refund-id: string, money: money }
+    record route-callback-input {
+        method: string, raw-query: list<u8>, headers: headers, body: list<u8>,
+        source-ip: option<string>,
+    }
+    record callback-input { order-id: string, money: money, raw: route-callback-input }
+
+    enum payment-status { pending, paid, closed, failed, unknown }
+    enum refund-status { pending, succeeded, failed, unknown }
+    record payment-output {
+        order-id: string, upstream-id: string, money: money, status: payment-status,
+        url: option<string>, qrcode: option<string>, paid-at: option<utc-time>,
+        expires-at: option<utc-time>,
+    }
+    record refund-output {
+        order-id: string, refund-id: string, upstream-refund-id: string,
+        money: money, status: refund-status,
+    }
+    record route-callback-output { order-id: string }
+    record callback-output {
+        event-id: string, order-id: string, upstream-id: string,
+        money: money, status: payment-status, ack: http-response,
+    }
+
+    record create-call { input: create-payment-input, responses: list<http-response> }
+    record payment-call { input: payment-input, responses: list<http-response> }
+    record refund-call { input: refund-input, responses: list<http-response> }
+    record route-call { input: route-callback-input, responses: list<http-response> }
+    record callback-call { input: callback-input, responses: list<http-response> }
+    variant output {
+        payment(payment-output), refund(refund-output),
+        route(route-callback-output), callback(callback-output),
+    }
+    record completion { value: output, code: option<string> }
+    variant operation-result {
+        completed(completion), rejected(string), unknown(option<string>), error(option<string>),
+    }
+    variant step { request(http-request), %result(operation-result) }
+}
+
+interface trade {
+    use types.{create-call, payment-call, refund-call, route-call, callback-call, step};
+    create-payment: func(call: create-call) -> step;
+    query-payment: func(call: payment-call) -> step;
+    close-payment: func(call: payment-call) -> step;
+    refund: func(call: refund-call) -> step;
+    query-refund: func(call: refund-call) -> step;
+    route-callback: func(call: route-call) -> step;
+    verify-callback: func(call: callback-call) -> step;
+}
+interface verification {
+    use types.{payment-call, refund-call, step};
+    query-payment: func(call: payment-call) -> step;
+    query-refund: func(call: refund-call) -> step;
+}
+
+world trade-plugin { import host; export types; export trade; }
+world verification-plugin { import host; export types; export verification; }

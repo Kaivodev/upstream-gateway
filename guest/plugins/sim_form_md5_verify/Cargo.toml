@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "sim_form_md5_verify"
+version = "0.3.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+kaivo-upstream-sdk = { path = "../../sdk", features = ["verification"] }
+sim-form-md5-protocol = { path = "../../sim-form-md5-protocol", features = ["verification"] }

@@ -1,0 +1,44 @@
+{
+  "type": "payment",
+  "code": "sim_form_md5",
+  "version": "0.3.0",
+  "abi_version": 3,
+  "domains": [
+    "127.0.0.1"
+  ],
+  "secrets": {
+    "shared": "shared"
+  },
+  "public_keys": [],
+  "config": {
+    "gateway": {
+      "type": "string",
+      "required": true
+    },
+    "account_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "capabilities": [
+    "create_payment",
+    "query_payment",
+    "close_payment",
+    "refund",
+    "query_refund",
+    "route_callback",
+    "verify_callback"
+  ],
+  "callback": {
+    "content_types": [
+      "application/x-www-form-urlencoded"
+    ],
+    "ack_status": 200,
+    "ack_body": "success",
+    "ack_content_type": "text/plain",
+    "methods": [
+      "POST"
+    ],
+    "allow_query": false
+  }
+}

@@ -1,0 +1,25 @@
+[package]
+publish = false
+name = "upstream-host"
+version = "0.3.0"
+edition = "2024"
+
+[dependencies]
+wasmtime = { version = "=48.0.10", default-features = false, features = ["runtime", "cranelift", "component-model", "pooling-allocator", "std", "anyhow"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.11", features = ["oid"] }
+sha1 = "0.11"
+md-5 = "0.11"
+hmac = "0.13"
+rsa = { version = "0.10", features = ["pkcs1v15"] }
+base64 = "0.23"
+subtle = "2"
+zeroize = "1"
+getrandom = { version = "0.4", features = ["sys_rng"] }
+memchr = "2"
+kaivo-upstream-sdk = { path = "../../guest/sdk" }
+
+[dev-dependencies]
+wat = "=1.263.0"

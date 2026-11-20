@@ -1,0 +1,27 @@
+{
+  "type": "verification",
+  "code": "sim_form_md5_verify",
+  "version": "0.3.0",
+  "abi_version": 3,
+  "domains": [
+    "127.0.0.1"
+  ],
+  "secrets": {
+    "query_key": "shared"
+  },
+  "public_keys": [],
+  "config": {
+    "gateway": {
+      "type": "string",
+      "required": true
+    },
+    "account_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "capabilities": [
+    "query_payment",
+    "query_refund"
+  ]
+}

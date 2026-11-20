@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/upstream-host", "crates/pluginctl"]
+exclude = ["guest"]
+resolver = "3"

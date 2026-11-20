@@ -1,0 +1,19 @@
+name: UG-2
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned toolchain and tools
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+          cargo install --locked wasm-tools@1.263.0
+          cargo install --locked wit-bindgen-cli@0.63.0
+          cargo install --locked cargo-deny@0.22.0
+          cargo install --locked cargo-vet@0.10.3
+      - run: make bindings && git diff --exit-code -- guest/sdk/src
+      - run: make check plugins replay repro calibrate stress
+      - run: make deny vet

@@ -1,0 +1,11 @@
+[workspace]
+members = ["sdk", "sim-form-md5-protocol", "plugins/*", "testdata/*"]
+resolver = "3"
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+opt-level = "z"
+strip = "symbols"
+lto = "fat"
+incremental = false

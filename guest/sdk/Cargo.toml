@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "kaivo-upstream-sdk"
+version = "0.3.0"
+edition = "2024"
+
+[features]
+trade = ["dep:wit-bindgen"]
+verification = ["dep:wit-bindgen"]
+
+[dependencies]
+wit-bindgen = { version = "=0.63.0", default-features = false, features = ["realloc"], optional = true }
+serde = "1"
+serde_json = "=1.0.154"

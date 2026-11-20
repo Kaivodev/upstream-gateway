@@ -1,0 +1,20 @@
+[graph]
+targets = ["wasm32-unknown-unknown"]
+
+[advisories]
+
+[licenses]
+allow = ["MIT", "Apache-2.0"]
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "deny"
+allow-workspace = true
+allow = ["itoa@=1.0.19", "memchr@=2.8.3", "serde@=1.0.229", "serde_core@=1.0.229", "serde_json@=1.0.154", "wit-bindgen@=0.63.0", "zmij@=1.0.23"]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
