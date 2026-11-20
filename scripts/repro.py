@@ -23,7 +23,9 @@ with tempfile.TemporaryDirectory() as scratch:
         checkout = Path(scratch) / name
         if clean:
             subprocess.run(["git", "init", "-q", checkout], check=True)
-            subprocess.run(["git", "fetch", "-q", str(root), "HEAD"], cwd=checkout, check=True)
+            # --depth 1: the rebuild needs only the snapshot, and a shallow source
+            # (actions/checkout defaults to depth 1) rejects a full-history fetch.
+            subprocess.run(["git", "fetch", "-q", "--depth", "1", str(root), "HEAD"], cwd=checkout, check=True)
             subprocess.run(["git", "reset", "-q", "--hard", "FETCH_HEAD"], cwd=checkout, check=True)
         else:
             # A development snapshot has no commit identity, including in copied directories.
