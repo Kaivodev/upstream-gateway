@@ -302,4 +302,4 @@ On 2026-11-22 the reviewer reran the full acceptance suite on the merged working
 - `make integration` passed 14 database tests and 13 binary end-to-end tests, including both SIGKILL cases.
 - `make calibrate stress bench` passed. The maximum step remained 24,154,643 fuel. Each package produced 16 identical stress reports.
 
-The upstream contract remains unpublished. `proto/source.json` records `unpublished` until protobuf tags the release. The version is still to be decided. Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
+The upstream contract remains unpublished. `proto/source.json` records `unpublished` until protobuf tags the release. The target version is v0.17.0 (unreleased). Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
