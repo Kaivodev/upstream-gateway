@@ -44,10 +44,36 @@ fn build(src: &Path, out: &Path) -> Result<Package> {
     Package::read(out)
 }
 #[test]
+fn rejects_an_unpinned_interpreter_before_validating_inputs() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempdir()?;
+    let python = tmp.path().join("python3");
+    fs::write(
+        &python,
+        b"#!/bin/sh\n[ \"$1\" = -I ] && [ \"$2\" = --version ] || exit 2\necho 'Python 3.14.0'\n",
+    )?;
+    fs::set_permissions(&python, fs::Permissions::from_mode(0o755))?;
+    let output = Command::new(env!("CARGO_BIN_EXE_pluginctl"))
+        .args(["build", "--plugin"])
+        .arg(root().join("guest/plugins/sim_json_rsa"))
+        .arg("--out")
+        .arg(tmp.path().join("unused"))
+        .env("PATH", tmp.path())
+        .output()?;
+    assert!(!output.status.success());
+    assert!(String::from_utf8(output.stderr)?.contains("wrong Python release: Python 3.14.0"));
+    Ok(())
+}
+#[test]
 fn real_packages_replay_and_verify() -> Result<()> {
     let tmp = tempdir()?;
     let root = root();
-    for (name, count) in [("sim_form_md5", 30), ("sim_form_md5_verify", 10)] {
+    for (name, count) in [
+        ("sim_form_md5", 30),
+        ("sim_form_md5_verify", 10),
+        ("sim_json_rsa", 30),
+        ("sim_json_rsa_verify", 10),
+    ] {
         let out = tmp.path().join(name);
         let p = build(&root.join("guest/plugins").join(name), &out)?;
         let r = Replay::new(&p)?;

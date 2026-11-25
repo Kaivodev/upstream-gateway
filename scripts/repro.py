@@ -6,7 +6,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 ctl = root / "target/debug/pluginctl"
-plugins = ("sim_form_md5", "sim_form_md5_verify")
+plugins = ("sim_form_md5", "sim_form_md5_verify", "sim_json_rsa", "sim_json_rsa_verify")
 clean = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 clean = clean and not subprocess.check_output(["git", "status", "--porcelain"], cwd=root)
@@ -40,4 +40,4 @@ with tempfile.TemporaryDirectory() as scratch:
         outputs.append(packages)
     if outputs[0] != outputs[1]:
         raise SystemExit("two-path rebuild differs")
-print("Both packages reproduced byte for byte")
+print("All four packages reproduced byte for byte")

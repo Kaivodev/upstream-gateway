@@ -40,6 +40,27 @@ pub struct Incoming {
     pub headers: Headers,
     pub body: Box<dyn Read + Send>,
 }
+pub type WireHeaders = Vec<(String, Vec<Vec<u8>>)>;
+
+pub struct WireIncoming {
+    pub status: u16,
+    pub headers: WireHeaders,
+    pub body: Box<dyn Read + Send>,
+}
+
+pub struct CapturedResponse {
+    pub status: u16,
+    pub headers: WireHeaders,
+    pub body: Vec<u8>,
+    pub complete: bool,
+}
+
+pub enum Dispatch {
+    Granted,
+    Denied(&'static str),
+    Unconfirmed,
+}
+
 /// Trusted single-exchange adapter. Enforce validated DNS/IP/TLS and header limits,
 /// disable retries and redirects, and honor the deadline through the final body read.
 pub trait Transport: Send + Sync {
@@ -50,6 +71,25 @@ pub trait Transport: Send + Sync {
         deadline: Instant,
         cancel: &Cancellation,
     ) -> Result<Incoming>;
+
+    fn send_wire(
+        &self,
+        template: &HttpRequest,
+        request: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming> {
+        let response = self.send(template, request, deadline, cancel)?;
+        Ok(WireIncoming {
+            status: response.status,
+            headers: response
+                .headers
+                .into_iter()
+                .map(|(k, vs)| (k, vs.into_iter().map(String::into_bytes).collect()))
+                .collect(),
+            body: response.body,
+        })
+    }
 }
 /// Trusted services must bound native work by the supplied deadline. Alerts are
 /// independent of cancellation. The default services offer only a UTC clock and entropy.
@@ -98,6 +138,19 @@ pub trait Environment: Send + Sync {
     fn observe_signature(&self, _signature: &str) {}
     fn log(&self, _event: &Value) {}
     fn alert(&self, _code: &str) {}
+    fn authorize_dispatch(&self, _number: usize, _template: &HttpRequest) -> Dispatch {
+        Dispatch::Granted
+    }
+    /// Returning an error prevents continuation with an unjournalled response.
+    fn record_attempt(
+        &self,
+        _number: usize,
+        _template: &HttpRequest,
+        _response: Option<&CapturedResponse>,
+        _code: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
     fn transport(&self) -> Option<&dyn Transport> {
         None
     }

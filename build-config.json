@@ -1,5 +1,6 @@
 {
   "rust_version": "1.99.1",
+  "python_version": "3.14.7",
   "target": "wasm32-unknown-unknown",
   "wasm_tools_version": "1.263.0",
   "wit_bindgen_cli_version": "0.63.0",

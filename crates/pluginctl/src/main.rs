@@ -11,6 +11,13 @@ use upstream_host::{
     package::{Package, digest},
     replay::Replay,
 };
+fn component_identity(p: &Package) {
+    println!(
+        "component_sha256 {}\ncomponent_bytes {}",
+        digest(&p.wasm),
+        p.wasm.len()
+    );
+}
 fn main() {
     if let Err(e) = run() {
         eprintln!("pluginctl: {e:#}");
@@ -57,6 +64,7 @@ fn run() -> Result<()> {
         "replay" => {
             let out = path("--out")?;
             ensure!(opts.is_empty(), "unknown option");
+            component_identity(&p);
             let report = Replay::new(&p)?.run()?;
             let bytes = json::canonical(&report);
             fs::write(out, &bytes)?;
@@ -64,7 +72,10 @@ fn run() -> Result<()> {
             ensure!(report["passed"] == true, "fixture regression failed");
         }
         "calibrate" => {
+            let out = opts.remove("--out");
             ensure!(opts.is_empty(), "unknown option");
+            println!("host_triple {}", env!("PLUGINCTL_TRIPLE"));
+            component_identity(&p);
             let package = &p.manifest.code;
             let report = Replay::for_calibration(&p)?.calibrate()?;
             for (op, maxima) in &report.operations {
@@ -81,6 +92,25 @@ fn run() -> Result<()> {
                         println!("{package} {op} {group} none")
                     }
                 }
+            }
+            let peak = report
+                .operations
+                .values()
+                .flat_map(|m| [&m.accepted, &m.boundary])
+                .flatten()
+                .max_by_key(|p| p.fuel)
+                .context("empty calibration")?;
+            println!(
+                "{package} max_step_fuel {} step {} case {}",
+                peak.fuel, peak.step, peak.case
+            );
+            if let Some(out) = out {
+                let summary = serde_json::json!({
+                    "package": package, "host_triple": env!("PLUGINCTL_TRIPLE"),
+                    "component_sha256": digest(&p.wasm), "component_bytes": p.wasm.len(),
+                    "max_step_fuel": peak.fuel, "step": peak.step, "case": peak.case,
+                });
+                fs::write(out, json::canonical(&summary))?;
             }
             println!(
                 "{package} aggregate total_fuel {} total_wall_ns {} fuel_per_ms {:.2}",

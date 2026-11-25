@@ -1,6 +1,6 @@
 use crate::{
     engine::{Host, Input, Loaded, Metric},
-    environment::{Cancellation, Environment},
+    environment::{Cancellation, CapturedResponse, Dispatch, Environment},
     http::{self, Check},
     json::{object, projected_len},
     package::{media, token},
@@ -249,6 +249,115 @@ fn scan_headers(s: &State, h: &Headers) -> bool {
     h.iter()
         .any(|(k, vs)| s.scan.bytes(k.as_bytes()) || vs.iter().any(|v| s.scan.bytes(v.as_bytes())))
 }
+fn exchange(
+    s: &State,
+    out: &mut Execution,
+    template: &HttpRequest,
+    request: &mut HttpRequest,
+    transport: &dyn crate::environment::Transport,
+    deadline: Instant,
+) -> Check<HttpResponse> {
+    let number = out.requests + 1;
+    let authorization = s.env.authorize_dispatch(number, template);
+    let sent = match authorization {
+        Dispatch::Granted => {
+            out.requests = number;
+            Some(transport.send_wire(template, request, deadline, &s.cancel))
+        }
+        _ => None,
+    };
+    for (_, values) in &mut request.headers {
+        for v in values {
+            zeroize::Zeroize::zeroize(v)
+        }
+    }
+    let mut captured = None;
+    let result = (|| {
+        let sent = match authorization {
+            Dispatch::Denied(code) => return Err(code),
+            Dispatch::Unconfirmed => {
+                out.requests = number;
+                return Err("dispatch_unconfirmed");
+            }
+            Dispatch::Granted => sent.unwrap(),
+        };
+        let incoming = sent.map_err(|err| {
+            if s.cancel.cancelled() {
+                "cancelled"
+            } else if err.is::<crate::environment::MissingResponse>() {
+                "transport_response"
+            } else {
+                "transport_error"
+            }
+        })?;
+        let mut body = Vec::new();
+        let read = incoming.body.take(262145).read_to_end(&mut body);
+        let oversized = body.len() > 262144;
+        let leaked = s.scan.bytes(&body)
+            || incoming
+                .headers
+                .iter()
+                .any(|(k, vs)| s.scan.bytes(k.as_bytes()) || vs.iter().any(|v| s.scan.bytes(v)));
+        body.truncate(262144);
+        let raw = captured.insert(CapturedResponse {
+            status: incoming.status,
+            headers: incoming.headers,
+            body,
+            complete: read.is_ok() && !oversized,
+        });
+        if leaked {
+            return Err("secret_leak");
+        }
+        if s.cancel.cancelled() {
+            return Err("cancelled");
+        }
+        if read.is_err() || Instant::now() >= deadline {
+            return Err("transport_error");
+        }
+        if oversized {
+            return Err("response_limit");
+        }
+        if !(100..600).contains(&raw.status) {
+            return Err("response_status");
+        }
+        if (300..400).contains(&raw.status) {
+            return Err("redirect_forbidden");
+        }
+        let headers: Option<Headers> = raw
+            .headers
+            .iter()
+            .map(|(k, vs)| {
+                let values = vs
+                    .iter()
+                    .map(|v| String::from_utf8(v.clone()).ok())
+                    .collect::<Option<_>>()?;
+                Some((k.clone(), values))
+            })
+            .collect();
+        let response = HttpResponse {
+            status: raw.status,
+            headers: http::normalize(&headers.ok_or("response_headers")?)
+                .ok_or("response_headers")?,
+            body: raw.body.clone(),
+        };
+        if s.scan.value(&response_value(&response)) {
+            return Err("secret_leak");
+        }
+        Ok(response)
+    })();
+    if out.requests == number {
+        let code = result.as_ref().err().copied().unwrap_or("");
+        if s.env
+            .record_attempt(number, template, captured.as_ref(), code)
+            .is_err()
+            && code != "secret_leak"
+        {
+            return Err("host_service");
+        }
+    }
+    result
+}
+
 // Close the measurement on early errors as well as on successful validation.
 struct StepTimer<'a> {
     start: Instant,
@@ -361,64 +470,9 @@ impl Host {
                         if let Some(d) = s.cancel.deadline {
                             deadline = deadline.min(d)
                         }
-                        out.requests += 1;
-                        let sent = transport.send(&template, &r, deadline, &s.cancel);
-                        for (_, vs) in &mut r.headers {
-                            for v in vs {
-                                zeroize::Zeroize::zeroize(v)
-                            }
-                        }
-                        let incoming = sent.map_err(|err| {
-                            if s.cancel.cancelled() {
-                                "cancelled"
-                            } else if err.is::<crate::environment::MissingResponse>() {
-                                "transport_response"
-                            } else {
-                                "transport_error"
-                            }
-                        })?;
-                        let mut body = Vec::new();
-                        incoming
-                            .body
-                            .take(262145)
-                            .read_to_end(&mut body)
-                            .map_err(|_| {
-                                if s.cancel.cancelled() {
-                                    "cancelled"
-                                } else {
-                                    "transport_error"
-                                }
-                            })?;
-                        if s.scan.bytes(&body) || scan_headers(&s, &incoming.headers) {
-                            return Err("secret_leak");
-                        }
-                        if s.cancel.cancelled() {
-                            return Err("cancelled");
-                        }
-                        if Instant::now() >= deadline {
-                            return Err("transport_error");
-                        }
-                        if body.len() > 262144 {
-                            return Err("response_limit");
-                        }
-                        if !(100..600).contains(&incoming.status) {
-                            return Err("response_status");
-                        }
-                        if (300..400).contains(&incoming.status) {
-                            return Err("redirect_forbidden");
-                        }
-                        let headers =
-                            http::normalize(&incoming.headers).ok_or("response_headers")?;
-                        let response = HttpResponse {
-                            status: incoming.status,
-                            headers,
-                            body,
-                        };
-                        let rv = response_value(&response);
-                        if s.scan.value(&rv) {
-                            return Err("secret_leak");
-                        }
-                        history.push(rv);
+                        let response =
+                            exchange(&s, &mut out, &template, &mut r, transport, deadline)?;
+                        history.push(response_value(&response));
                         responses.push(response);
                         out.responses += 1;
                     }
@@ -643,3 +697,6 @@ mod tests {
         assert_eq!(check(p), Err("output_time"));
     }
 }
+
+#[cfg(test)]
+mod dispatch_tests;

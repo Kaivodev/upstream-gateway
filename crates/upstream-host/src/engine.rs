@@ -21,12 +21,12 @@ use wasmtime::{
         types::{ComponentExtern, ComponentItem},
     },
 };
-// Across both release guests the maximum was create_payment/maximum_call.
-const PILOT_MAX_FUEL: u64 = 24_154_643;
+// UG-3 four-package calibration, including the pre-dispatch create boundary.
+const MEASURED_MAX_STEP_FUEL: u64 = 24_154_643;
 const FUEL_SAFETY_FACTOR: u64 = 2;
 const FUEL_ROUNDING: u64 = 10_000_000;
 const DEFAULT_FUEL: u64 =
-    (PILOT_MAX_FUEL * FUEL_SAFETY_FACTOR).div_ceil(FUEL_ROUNDING) * FUEL_ROUNDING;
+    (MEASURED_MAX_STEP_FUEL * FUEL_SAFETY_FACTOR).div_ceil(FUEL_ROUNDING) * FUEL_ROUNDING;
 
 #[derive(Clone)]
 pub struct Options {
@@ -463,7 +463,9 @@ mod admission_tests {
         assert_eq!(result.category, "not_sent");
     }
     #[test]
-    fn options_separate_live_and_replay_clocks() {
+    fn options_use_frozen_fuel_and_separate_live_and_replay_clocks() {
+        assert_eq!(Options::production("payment").fuel_per_step, 50_000_000);
+        assert_eq!(Options::replay("verification").fuel_per_step, 50_000_000);
         assert_eq!(
             Options::production("payment").step_wall_clock,
             Duration::from_millis(200)

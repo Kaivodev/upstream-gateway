@@ -1,5 +1,5 @@
 [workspace]
-members = ["sdk", "sim-form-md5-protocol", "plugins/*", "testdata/*"]
+members = ["sdk", "sim-form-md5-protocol", "sim-json-rsa-protocol", "plugins/*", "testdata/*"]
 resolver = "3"
 
 [profile.release]

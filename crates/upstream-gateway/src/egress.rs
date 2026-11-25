@@ -1,0 +1,275 @@
+use crate::Mode;
+use anyhow::{Context, Result, bail, ensure};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::{Request, Response, Uri, body::Incoming as Body, client::conn::http1};
+use hyper_util::rt::TokioIo;
+use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
+use std::{
+    future::Future,
+    io::{self, Cursor, Read},
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::{TcpStream, lookup_host},
+    runtime::Handle,
+    task::JoinHandle,
+};
+use tokio_rustls::TlsConnector;
+use upstream_host::{
+    environment::{Cancellation, Incoming, Transport, WireIncoming},
+    types::HttpRequest,
+};
+
+const HEAD_LIMIT: usize = 16 << 10;
+const BODY_LIMIT: usize = 256 << 10;
+
+pub struct Egress {
+    runtime: Handle,
+    mode: Mode,
+    proxy: Option<SocketAddr>,
+    tls: TlsConnector,
+}
+trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
+type Socket = Box<dyn Stream>;
+
+fn public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v) => {
+            let [a, b, c, _] = v.octets();
+            !matches!(a, 0 | 10 | 127 | 224..=255)
+                && !(a == 100 && (64..128).contains(&b))
+                && !(a == 169 && b == 254)
+                && !(a == 172 && (16..32).contains(&b))
+                && !(a == 192 && (b == 168 || b == 0 && matches!(c, 0 | 2) || b == 88 && c == 99))
+                && !(a == 198 && (matches!(b, 18 | 19) || b == 51 && c == 100))
+                && !(a == 203 && b == 0 && c == 113)
+        }
+        IpAddr::V6(v) => {
+            let [a, b, ..] = v.segments();
+            (a & 0xe000) == 0x2000
+                && !(a == 0x2001 && (b < 0x200 || b == 0xdb8))
+                && a != 0x2002
+                && !(a == 0x3fff && b < 0x1000)
+        }
+    }
+}
+struct Driver(JoinHandle<()>);
+impl Drop for Driver {
+    fn drop(&mut self) {
+        self.0.abort()
+    }
+}
+struct Partial;
+impl Read for Partial {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("incomplete response"))
+    }
+}
+
+async fn bounded<T>(
+    deadline: Instant,
+    cancel: &Cancellation,
+    work: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    let deadline = cancel.deadline.map_or(deadline, |d| d.min(deadline));
+    if cancel.cancelled() || Instant::now() >= deadline {
+        bail!("exchange expired")
+    }
+    tokio::select! {
+        biased;
+        _=tokio::time::sleep_until(deadline.into())=>bail!("exchange expired"),
+        _=async{while !cancel.cancelled(){tokio::time::sleep(Duration::from_millis(5)).await}}=>bail!("exchange cancelled"),
+        result=work=>result,
+    }
+}
+
+async fn request(
+    socket: Socket,
+    req: Request<Full<Bytes>>,
+    upgrade: bool,
+) -> Result<(Response<Body>, Driver)> {
+    let (mut sender, connection) = http1::Builder::new()
+        .max_buf_size(HEAD_LIMIT)
+        .max_headers(HEAD_LIMIT / 4)
+        .handshake(TokioIo::new(socket))
+        .await?;
+    let driver = Driver(tokio::spawn(async move {
+        if upgrade {
+            let _ = connection.with_upgrades().await;
+        } else {
+            let _ = connection.await;
+        }
+    }));
+    let response = sender.send_request(req).await?;
+    Ok((response, driver))
+}
+impl Egress {
+    pub fn new(
+        runtime: Handle,
+        mode: Mode,
+        proxy: Option<SocketAddr>,
+        roots: RootCertStore,
+    ) -> Result<Self> {
+        ensure!(!roots.is_empty(), "empty upstream trust store");
+        let tls =
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()?
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+        Ok(Self {
+            runtime,
+            mode,
+            proxy,
+            tls: TlsConnector::from(Arc::new(tls)),
+        })
+    }
+    pub fn public_roots() -> RootCertStore {
+        RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned())
+    }
+    async fn start(&self, r: &HttpRequest) -> Result<(Response<Body>, Driver)> {
+        let dev = self.mode.allow_http();
+        let host = upstream_host::http::url(&r.url, dev).map_err(anyhow::Error::msg)?;
+        let uri: Uri = r.url.parse()?;
+        let tls = uri.scheme_str() == Some("https");
+        let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
+        let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
+        let target = *addresses.first().context("no upstream address")?;
+        ensure!(
+            addresses
+                .iter()
+                .all(|a| public(a.ip()) || dev && a.ip().is_loopback()),
+            "forbidden address"
+        );
+        let mut stream: Socket = Box::new(TcpStream::connect(self.proxy.unwrap_or(target)).await?);
+        if self.proxy.is_some() {
+            let target = target.to_string();
+            let connect = Request::connect(target.as_str())
+                .header("host", &target)
+                .body(Full::new(Bytes::new()))?;
+            let (mut response, _driver) = request(stream, connect, true).await?;
+            ensure!(response.status().is_success(), "proxy refused tunnel");
+            stream = Box::new(TokioIo::new(hyper::upgrade::on(&mut response).await?));
+        }
+        if tls {
+            stream = Box::new(
+                self.tls
+                    .connect(ServerName::try_from(host.to_owned())?, stream)
+                    .await?,
+            );
+        }
+        let mut req = Request::builder()
+            .method(r.method.as_str())
+            .uri(uri.path_and_query().map_or("/", |v| v.as_str()))
+            .header(
+                "host",
+                uri.authority().context("missing authority")?.as_str(),
+            );
+        for (name, values) in &r.headers {
+            for value in values {
+                req = req.header(name, value)
+            }
+        }
+        request(
+            stream,
+            req.body(Full::new(Bytes::copy_from_slice(&r.body)))?,
+            false,
+        )
+        .await
+    }
+    async fn exchange(
+        &self,
+        r: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming> {
+        let (response, _driver) = bounded(deadline, cancel, self.start(r)).await?;
+        let status = response.status().as_u16();
+        let mut headers = Vec::new();
+        let mut header_bytes = 0;
+        for name in response.headers().keys() {
+            let values = response
+                .headers()
+                .get_all(name)
+                .iter()
+                .map(|v| v.as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            header_bytes += values
+                .iter()
+                .map(|v| name.as_str().len() + v.len())
+                .sum::<usize>();
+            ensure!(header_bytes <= HEAD_LIMIT, "response headers too large");
+            headers.push((name.to_string(), values))
+        }
+        let mut body = response.into_body();
+        let mut data = Vec::new();
+        let complete = bounded(deadline, cancel, async {
+            while let Some(frame) = body.frame().await {
+                if let Ok(bytes) = frame?.into_data() {
+                    let left = BODY_LIMIT + 1 - data.len();
+                    data.extend(&bytes[..left.min(bytes.len())]);
+                    if data.len() > BODY_LIMIT {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        })
+        .await
+        .is_ok();
+        let body: Box<dyn Read + Send> = if complete {
+            Box::new(Cursor::new(data))
+        } else {
+            Box::new(Cursor::new(data).chain(Partial))
+        };
+        Ok(WireIncoming {
+            status,
+            headers,
+            body,
+        })
+    }
+}
+impl Transport for Egress {
+    fn send_wire(
+        &self,
+        _: &HttpRequest,
+        r: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming> {
+        self.runtime.block_on(self.exchange(r, deadline, cancel))
+    }
+    fn send(
+        &self,
+        t: &HttpRequest,
+        r: &HttpRequest,
+        d: Instant,
+        c: &Cancellation,
+    ) -> Result<Incoming> {
+        let raw = self.send_wire(t, r, d, c)?;
+        let headers = raw
+            .headers
+            .into_iter()
+            .map(|(k, vs)| {
+                Ok((
+                    k,
+                    vs.into_iter()
+                        .map(String::from_utf8)
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Incoming {
+            status: raw.status,
+            headers,
+            body: raw.body,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

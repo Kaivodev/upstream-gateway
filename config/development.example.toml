@@ -1,0 +1,18 @@
+role = "trade"
+mode = "development"
+listen = "127.0.0.1:8443"
+allowed_peers = ["payment"]
+database_url_env = "GATEWAY_DATABASE_URL"
+local_kek_file = "replace-with-trade-kek-file"
+allow_loopback_http = false
+allow_uncommitted = false
+
+[tls]
+trust_domain = "aipay.internal"
+ca_file = "replace-with-ca-bundle.pem"
+cert_file = "replace-with-service-chain.pem"
+key_file = "replace-with-service-key.pem"
+
+[timing]
+heartbeat_ms = 3000
+fence_ms = 30000

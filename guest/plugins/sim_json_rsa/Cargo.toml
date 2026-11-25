@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "sim_json_rsa"
+version = "0.3.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+kaivo-upstream-sdk = { path = "../../sdk", features = ["trade"] }
+sim-json-rsa-protocol = { path = "../../sim-json-rsa-protocol", features = ["trade"] }

@@ -48,35 +48,7 @@ impl Scanner {
         if self.raw(b) {
             return true;
         }
-        if self.0.is_empty()
-            || !b.contains(&b'\\')
-            || serde_json::from_slice::<serde::de::IgnoredAny>(b).is_err()
-        {
-            return false;
-        }
-        // Inspect every escaped string token, including duplicate object keys/values
-        // that a map representation would collapse. Unescaped bytes were scanned above.
-        let mut pos = 0;
-        while let Some(start) = memchr::memchr(b'"', &b[pos..]).map(|i| i + pos) {
-            pos = start + 1;
-            let mut escaped = false;
-            while let Some(i) = memchr::memchr2(b'"', b'\\', &b[pos..]).map(|i| i + pos) {
-                if b[i] == b'\\' {
-                    escaped = true;
-                    pos = i + 2;
-                    continue;
-                }
-                pos = i + 1;
-                if escaped
-                    && serde_json::from_slice::<String>(&b[start..pos])
-                        .is_ok_and(|s| self.raw(s.as_bytes()))
-                {
-                    return true;
-                }
-                break;
-            }
-        }
-        false
+        !self.0.is_empty() && crate::json::escaped_strings_match(b, |s| self.raw(s))
     }
 }
 pub(crate) struct State {

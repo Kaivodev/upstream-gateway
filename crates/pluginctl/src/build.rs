@@ -110,18 +110,22 @@ impl Builder {
                 == validator.as_bytes(),
             "unrecognized build validator"
         );
-        checked(
-            Command::new("python3")
-                .env_remove("PYTHONPATH")
-                .args(["-I", "-B", "-c", validator])
-                .arg(&root)
-                .arg(&plugin),
-        )?;
         let cfg = wire::object(&file(&root, &root.join("build-config.json"), 65536)?)?;
         ensure!(
             cfg == serde_json::from_str::<Value>(include_str!("../../../build-config.json"))?,
             "build configuration differs from pinned builder"
         );
+        let version = output(Command::new("python3").args(["-I", "--version"]))?;
+        ensure!(
+            version == format!("Python {}", cfg["python_version"].as_str().unwrap()),
+            "wrong Python release: {version}"
+        );
+        checked(
+            Command::new("python3")
+                .args(["-I", "-B", "-c", validator])
+                .arg(&root)
+                .arg(&plugin),
+        )?;
         let rust = output(Command::new("rustc").arg("-vV").current_dir(&root))?;
         let field = |k: &str| {
             rust.lines()
@@ -725,6 +729,7 @@ pub fn write(p: &Package, out: &Path, src: &Path) -> Result<()> {
         }
         return Err(e.into());
     }
+    crate::component_identity(p);
     println!(
         "package_sha256 {}\nfixtures_sha256 {}",
         p.hash(),

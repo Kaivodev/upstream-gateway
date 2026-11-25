@@ -72,3 +72,33 @@ pub fn projected_len(v: &Value) -> usize {
             .count()
             * 3
 }
+
+/// Inspect each decoded escaped JSON string, including overwritten duplicate members.
+pub fn escaped_strings_match(b: &[u8], mut matches: impl FnMut(&[u8]) -> bool) -> bool {
+    if !b.contains(&b'\\') || serde_json::from_slice::<serde::de::IgnoredAny>(b).is_err() {
+        return false;
+    }
+    // Inspect every escaped string token, including duplicate object keys/values
+    // that a map representation would collapse. Unescaped bytes were scanned above.
+    let mut pos = 0;
+    while let Some(start) = memchr::memchr(b'"', &b[pos..]).map(|i| i + pos) {
+        pos = start + 1;
+        let mut escaped = false;
+        while let Some(i) = memchr::memchr2(b'"', b'\\', &b[pos..]).map(|i| i + pos) {
+            if b[i] == b'\\' {
+                escaped = true;
+                pos = i + 2;
+                continue;
+            }
+            pos = i + 1;
+            if escaped
+                && serde_json::from_slice::<String>(&b[start..pos])
+                    .is_ok_and(|s| matches(s.as_bytes()))
+            {
+                return true;
+            }
+            break;
+        }
+    }
+    false
+}

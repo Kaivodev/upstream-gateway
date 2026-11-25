@@ -1,19 +1,127 @@
-name: UG-2
+name: Upstream gateway
 on: [push, pull_request]
 permissions:
   contents: read
+
 jobs:
   pilot:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            triple: x86_64-unknown-linux-gnu
+          - os: macos-15
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14.7'
       - name: Install pinned toolchain and tools
         run: |
           rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "${{ matrix.triple }}"
           cargo install --locked wasm-tools@1.263.0
           cargo install --locked wit-bindgen-cli@0.63.0
+      - if: runner.os == 'Linux'
+        run: |
           cargo install --locked cargo-deny@0.22.0
           cargo install --locked cargo-vet@0.10.3
       - run: make bindings && git diff --exit-code -- guest/sdk/src
-      - run: make check plugins replay repro calibrate stress
-      - run: make deny vet
+      - if: runner.os == 'Linux'
+        run: make check deny vet
+      - run: make replay repro release-ctl
+      - name: Inspect Cargo metadata for the form payment component
+        working-directory: guest
+        shell: bash
+        run: |
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/metadata-target"
+          toolchain=$(rustc --print sysroot)
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/workspace --remap-path-prefix=$toolchain=/toolchain --remap-path-prefix=$RUNNER_TEMP=/build"
+          cargo build -v --locked --offline --release --lib --no-default-features --target wasm32-unknown-unknown -p sim_form_md5 2>"$RUNNER_TEMP/cargo-verbose"
+          # Print the host build-script path suffix or the target crate, and its disambiguator.
+          sed -nE 's/.*--crate-name build_script_build .*[/]([^/ ]+)[/]build.rs .* -C metadata=([0-9a-f]+) .*/host \1 \2/p; s/.*--crate-name ([^ ]+) .* -C metadata=([0-9a-f]+) .*--target wasm32-unknown-unknown .*/wasm \1 \2/p' "$RUNNER_TEMP/cargo-verbose"
+      - name: Calibrate four components
+        run: |
+          mkdir -p dist/calibration
+          for p in dist/packages/*; do
+            target/release/pluginctl calibrate --dir "$p" --out "dist/calibration/$(basename "$p").json"
+          done
+          jq -s 'sort_by(.package)' dist/calibration/*.json > dist/components.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: components-${{ matrix.triple }}
+          path: dist/components.json
+          if-no-files-found: error
+      - if: runner.os == 'Linux'
+        run: make stress
+
+  compare:
+    needs: pilot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14.7'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: components-*
+          path: evidence
+      - name: Compare host measurements
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          packages = {"sim_form_md5", "sim_form_md5_verify", "sim_json_rsa", "sim_json_rsa_verify"}
+          hosts = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin")
+          rows = {}
+          for host in hosts:
+              path = Path("evidence", f"components-{host}", "components.json")
+              data = json.loads(path.read_bytes())
+              by_package = {r["package"]: r for r in data if r["host_triple"] == host}
+              if set(by_package) != packages or len(data) != len(packages):
+                  raise ValueError(f"Incomplete or mislabeled measurements for {host}")
+              rows[host] = by_package
+              print(f"{host} max_step_fuel={max(r['max_step_fuel'] for r in data)}")
+          for package in sorted(packages):
+              hashes = set()
+              for host in hosts:
+                  r = rows[host][package]
+                  hashes.add(r["component_sha256"])
+                  print(f"{package} {host} {r['component_sha256']} {r['component_bytes']} bytes "
+                        f"max_step_fuel={r['max_step_fuel']} {r['case']} step {r['step']}")
+              print(f"{package} component_sha256 {'match' if len(hashes) == 1 else 'differ'}")
+          peak = max(r["max_step_fuel"] for by_package in rows.values() for r in by_package.values())
+          rounded = ((2 * peak + 9_999_999) // 10_000_000) * 10_000_000
+          print(f"Two-host maximum {peak}, rounded budget with factor 2 is {rounded}")
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: gateway_test
+          POSTGRES_DB: gateway_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U gateway_test -d gateway_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14.7'
+      - run: make proto-check
+      - name: Install gateway build tools
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
+          cargo install --locked wasm-tools@1.263.0
+          cargo install --locked wit-bindgen-cli@0.63.0
+      - run: make integration
+        env:
+          AIPAY_TEST_DATABASE_URL: postgres://gateway_test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/gateway_test
