@@ -23,18 +23,21 @@ Both roles expose ReplayPackage, RegisterPackage, RevokePackage, StoreCredential
 
 ### Gateway configuration
 
-Choose the [mTLS example](config/development.example.toml) or the [Kubernetes plaintext example](config/kubernetes.example.toml) and supply the referenced files. Relative paths resolve against the configuration file's directory. Set the environment variable named by `database_url_env` to a PostgreSQL connection string for this instance. The database principal must be able to migrate its schema. The database adapter currently uses a private, trusted connection without database TLS.
+Choose the [mTLS example](config/development.example.toml) or the [Kubernetes plaintext example](config/kubernetes.example.toml) and supply the referenced files. Relative paths resolve against the configuration file's directory. Set the environment variable named by `database_url_env` to a PostgreSQL connection string for this instance. The database principal must be able to migrate its schema.
 
 | Setting or command | Meaning |
 | --- | --- |
 | `role`, `allowed_peers` | Required role and its one-element client allowlist from the table above. |
 | `mode`, `listen` | Select `development` or `production` and an explicit IP socket address. Development requires exactly one of `local_kek_file` and `[kms]`. Production requires `[kms]`. |
 | `transport` | Defaults to `mtls` and requires `[tls]`. Kubernetes uses `plaintext` for HTTP/2 prior knowledge (h2c) with `[service_token]`. Configuring both identity mechanisms fails startup. |
-| `service_token.jwks_file`, `service_token.issuer` | Required in plaintext mode. Mount the issuer's public JWKS and configure its exact issuer. The gateway rereads the file every 30 seconds. Failed reloads retain the last valid set. An invalid initial set prevents startup. |
+| `service_token.jwks_file` | Required in plaintext mode. Mount the issuer's public JWKS. The gateway rereads it every 30 seconds. Failed reloads retain the last valid set. An invalid initial set prevents startup. |
+| `service_token.issuer`, `service_token.issuer_file` | Set exactly one in plaintext mode. Supply the exact issuer inline or point to the ConfigMap's `issuer` file. Startup reads the regular file once, accepts up to 1 KiB of UTF-8, trims surrounding ASCII whitespace, and requires a nonempty issuer without internal whitespace. Restart the gateway after an issuer change. |
 | `service_token.service_namespaces` | Map ServiceAccount names to namespaces, including this role's sole caller. Clients send one projected token in `x-kaivo-service-token` with audience `kaivo:upstream-gateway-trade` or `kaivo:upstream-gateway-verification`. Use a 600-second projection. The gateway strips the header before dispatch. |
 | gRPC health probe | Use `grpc.health.v1.Health/Check` or `Watch` with the empty service name and the configured listener port. The gateway reports SERVING after initialization and NOT_SERVING on drain or executor retirement. Probes bypass token and method authorization. The mTLS listener still requires the role's client certificate. |
 | `tls.trust_domain`, `tls.ca_file`, `tls.cert_file`, `tls.key_file` | SPIFFE trust domain, PEM trust bundle, server leaf followed by intermediates, and matching PEM private key. |
-| `database_url_env`, `local_kek_file` | Name of the environment variable containing the DSN, and optional development-only path to a persistent 32-byte KEK with owner-only read or read/write permissions. |
+| `database_url_env`, `database_ca_file` | Name of the environment variable containing the DSN and optional path to the PostgreSQL CA bundle in PEM format. Production requires the bundle. |
+| `database_max_connections` | Size of the shared connection pool for requests, journal workers and maintenance. Defaults to 16 and accepts 4–64. Lower it for managed databases with small connection limits. |
+| `local_kek_file` | Optional development-only path to a persistent 32-byte KEK with owner-only read or read/write permissions. |
 | `kms.key` | Unversioned Cloud KMS symmetric CryptoKey resource, for example `projects/kaivokms/locations/asia-southeast1/keyRings/test-business/cryptoKeys/upstream-gateway-trade-kek`. |
 | `kms.wrapped_key_file` | Path to the role's `kaivo.sealing.v1` JSON file. Mount it from a ConfigMap. Startup requires one current key with purpose `sealing`. |
 | `kms.credentials_file` | GCP `external_account` JSON with an absolute file source for a projected Kubernetes JWT and a service account impersonation URL. The source format defaults to `text`. |
@@ -52,6 +55,31 @@ cargo build --locked --release -p upstream-gateway
 target/release/upstream-gateway --config path/to/instance.toml
 ```
 
+### PostgreSQL TLS
+
+Set `sslmode` in the database URL. For a managed database, mount the provider CA bundle, set the top-level `database_ca_file` to its path, and use `?sslmode=require`. For CloudNativePG, mount the cluster's server CA and connect using a Service DNS name covered by its certificate.
+
+| Database CA file | URL `sslmode` | Development | Production |
+| --- | --- | --- | --- |
+| Set | `require` | Verify chain and host | Verify chain and host |
+| Set | Absent, `prefer`, or `disable` | Startup error | Startup error |
+| Omitted | `require` | TLS without certificate verification | Startup error |
+| Omitted | Absent, `prefer`, or `disable` | Plaintext | Startup error |
+
+Database TLS requires a single TCP host and uses TLS 1.2 or 1.3. With a CA file, the gateway trusts only that bundle and verifies the URL host against the certificate's DNS or IP subject alternative names (libpq `verify-full` semantics). The gateway loads the bundle at startup. The connector reports no PostgreSQL channel binding.
+
+### Container image
+
+Build from the repository root with BuildKit.
+
+```sh
+docker build -t upstream-gateway:0.5.0 .
+```
+
+The builder installs wasm-tools 1.263.0, fetches the locked host dependencies, and compiles the release binary with network access disabled. The shared deploy workflow may supply the `COMMIT` build argument and the optional `aipay_modules_token` secret. Neither is used.
+
+The image runs `/app/upstream-gateway --config /run/kaivo/inputs/gateway.toml` as UID and GID 65532. Mount the configuration and referenced files read-only with permissions that allow this user to read them. Supply the database URL through the configured environment variable. A read-only root filesystem requires no writable volume. Wasmtime compiles components in memory and its disk cache is disabled. Persistent gateway state lives in PostgreSQL.
+
 ### Provisioning and loading a wrapped KEK
 
 Run the following command once for a new role and database. The provisioning identity needs permission to encrypt and decrypt with the configured CryptoKey. The running service needs decrypt permission. Both identities use workload identity federation with service account impersonation.
@@ -68,7 +96,7 @@ Cloud KMS primary key-version rotation requires no file change. Keep the KMS ver
 
 ### Service lifecycle
 
-Startup validates configuration and the selected identity material, applies migrations, registers an executor, starts maintenance, and loads registered components before binding the listener. TLS files are reread every 30 seconds. A changed bundle must validate as a whole and preserve its authentication usages before new handshakes adopt it. Established connections keep their original peer identity.
+Startup validates configuration and the selected identity material, applies migrations, registers an executor, starts maintenance, and loads registered components before binding the listener. Listener mTLS files are reread every 30 seconds. A changed bundle must validate as a whole and preserve its authentication usages before new handshakes adopt it. Established connections keep their original peer identity.
 
 SIGTERM closes admission and allows up to 75 seconds for active RPCs and detached journal workers to finish. Once the executor requires restart, new requests receive Unavailable while the listener drains, and the process exits unsuccessfully. Run under a supervisor that starts a new process identity on failure. The new executor seals a previously dispatched, interrupted operation as UNKNOWN with `dispatch_interrupted`. An operation without a dispatch marker can execute when its owner retries the original key.
 

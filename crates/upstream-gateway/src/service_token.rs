@@ -42,7 +42,9 @@ struct Snapshot {
 }
 
 pub(super) struct Verifier {
-    config: ServiceToken,
+    issuer: String,
+    jwks_file: std::path::PathBuf,
+    service_namespaces: BTreeMap<String, String>,
     audience: String,
     allowed_peers: Vec<String>,
     snapshot: watch::Sender<Snapshot>,
@@ -54,13 +56,16 @@ impl Verifier {
         role: Role,
         allowed_peers: Vec<String>,
     ) -> anyhow::Result<Self> {
+        let issuer = config.load_issuer()?;
         let bytes = std::fs::read(&config.jwks_file).map_err(|_| anyhow::anyhow!(INVALID_KEYS))?;
         let snapshot = Snapshot {
             keys: jwks::parse(&bytes)?,
             hash: Sha256::digest(&bytes).into(),
         };
         Ok(Self {
-            config,
+            issuer,
+            jwks_file: config.jwks_file,
+            service_namespaces: config.service_namespaces,
             audience: format!("kaivo:upstream-gateway-{}", role.name()),
             allowed_peers,
             snapshot: watch::channel(snapshot).0,
@@ -68,8 +73,7 @@ impl Verifier {
     }
 
     pub fn reload(&self) -> anyhow::Result<()> {
-        let bytes =
-            std::fs::read(&self.config.jwks_file).map_err(|_| anyhow::anyhow!(INVALID_KEYS))?;
+        let bytes = std::fs::read(&self.jwks_file).map_err(|_| anyhow::anyhow!(INVALID_KEYS))?;
         let hash = Sha256::digest(&bytes).into();
         if self.snapshot.borrow().hash != hash {
             self.snapshot.send_replace(Snapshot {
@@ -138,7 +142,7 @@ impl Verifier {
         }
         let payload = json::compatible(&payload).ok_or(MALFORMED)?;
         let claims: Object = serde_json::from_slice(&payload).map_err(|_| MALFORMED)?;
-        if field::<String>(&claims, "iss").as_ref() != Some(&self.config.issuer) {
+        if field::<String>(&claims, "iss").as_ref() != Some(&self.issuer) {
             return Err("token_issuer");
         }
         let matches = field::<String>(&claims, "aud").is_some_and(|aud| aud == self.audience)
@@ -188,7 +192,7 @@ impl Verifier {
                 return Err("token_subject");
             }
         }
-        if self.config.service_namespaces.get(name).map(String::as_str) != Some(namespace) {
+        if self.service_namespaces.get(name).map(String::as_str) != Some(namespace) {
             return Err("token_namespace");
         }
         if !self.allowed_peers.iter().any(|allowed| allowed == name) {

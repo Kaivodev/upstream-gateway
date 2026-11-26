@@ -278,6 +278,17 @@ pub async fn run(path: &Path) -> Result<()> {
         )?)),
         _ => anyhow::bail!("invalid authentication settings for transport"),
     };
+    let url = zeroize::Zeroizing::new(
+        std::env::var(&config.database_url_env)
+            .map_err(|_| anyhow!("missing database configuration"))?,
+    );
+    let pool = crate::db::configured_pool(
+        url.parse()
+            .map_err(|_| anyhow!("invalid database configuration"))?,
+        mode,
+        config.database_ca_file.as_deref(),
+        config.database_max_connections,
+    )?;
     let kms = match (&config.kms, &config.local_kek_file) {
         (Some(config_kms), None) => crate::kms::unwrap(config_kms, config.role, &Observer).await?,
         (None, Some(file)) => {
@@ -285,14 +296,6 @@ pub async fn run(path: &Path) -> Result<()> {
         }
         _ => anyhow::bail!("invalid KEK configuration"),
     };
-    let url = zeroize::Zeroizing::new(
-        std::env::var(&config.database_url_env)
-            .map_err(|_| anyhow!("missing database configuration"))?,
-    );
-    let pool = crate::pool(
-        url.parse()
-            .map_err(|_| anyhow!("invalid database configuration"))?,
-    )?;
     let roots = match config.egress_ca_file {
         Some(ref path) => {
             crate::tls::roots(path).map_err(|_| anyhow!("invalid egress trust bundle"))?

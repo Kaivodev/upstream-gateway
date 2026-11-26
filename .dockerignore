@@ -1,0 +1,8 @@
+**/target
+dist
+**/.git
+.github
+.local
+.env*
+**/*.key
+**/*.pem

@@ -1,6 +1,6 @@
-use crate::Role;
+use crate::{Mode, Role, db_tls::DatabaseTls};
 use deadpool_postgres::{Manager, Pool};
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 use tokio_postgres::{Config, NoTls, Transaction};
 use tonic::Status;
 
@@ -70,18 +70,38 @@ pub(crate) fn conflict() -> Status {
 pub(crate) fn precondition() -> Status {
     Status::failed_precondition("package admission failed")
 }
-pub fn pool(mut config: Config) -> Result<Pool, Status> {
+/// Creates a development pool without a database CA bundle.
+pub fn pool(config: Config) -> Result<Pool, Status> {
+    let mode = Mode::Development {
+        allow_loopback_http: false,
+        allow_private_http: false,
+        allow_uncommitted: false,
+    };
+    configured_pool(config, mode, None, 16).map_err(|_| unavailable())
+}
+
+pub(crate) fn configured_pool(
+    mut config: Config,
+    mode: Mode,
+    ca: Option<&Path>,
+    max_connections: usize,
+) -> anyhow::Result<Pool> {
+    let tls = DatabaseTls::configure(&config, mode, ca)?;
     config.connect_timeout(Duration::from_secs(5));
     config.options(format!(
         "{} -c statement_timeout=5000 -c idle_in_transaction_session_timeout=10000",
         config.get_options().unwrap_or("")
     ));
-    Pool::builder(Manager::new(config, NoTls))
-        .max_size(16)
+    let manager = match tls {
+        Some(tls) => Manager::new(config, tls),
+        None => Manager::new(config, NoTls),
+    };
+    Ok(Pool::builder(manager)
+        .max_size(max_connections)
         .runtime(deadpool_postgres::Runtime::Tokio1)
         .wait_timeout(Some(Duration::from_secs(5)))
         .build()
-        .map_err(|_| unavailable())
+        .map_err(|_| unavailable())?)
 }
 pub(crate) async fn migrate(
     pool: &Pool,

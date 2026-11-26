@@ -19,7 +19,8 @@ fn rsa_jwk() -> Value {
 pub(crate) fn config(path: &Path) -> ServiceToken {
     ServiceToken {
         jwks_file: path.into(),
-        issuer: ISSUER.into(),
+        issuer: Some(ISSUER.into()),
+        issuer_file: None,
         service_namespaces: ["payment", "reconciliation"]
             .map(|s| (s.into(), "kaivo-business".into()))
             .into(),
@@ -483,7 +484,14 @@ fn jwks_admission() {
 fn startup_and_reload_publish_only_complete_valid_key_sets() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("jwks");
-    let load = || Verifier::load(config(&file), Role::Trade, vec!["payment".into()]);
+    let issuer_file = dir.path().join("issuer");
+    fs::write(&issuer_file, format!("{ISSUER}\n")).unwrap();
+    let load = || {
+        let mut token = config(&file);
+        token.issuer = None;
+        token.issuer_file = Some(issuer_file.clone());
+        Verifier::load(token, Role::Trade, vec!["payment".into()])
+    };
     assert!(load().is_err());
     fs::write(&file, b"{}").unwrap();
     assert!(load().is_err());
@@ -494,6 +502,7 @@ fn startup_and_reload_publish_only_complete_valid_key_sets() {
     let write = |s: &Signer| fs::write(&file, json!({"keys":[s.jwk()]}).to_string()).unwrap();
     write(&first);
     let verifier = load().unwrap();
+    fs::remove_file(issuer_file).unwrap();
     let changes = verifier.snapshot.subscribe();
     verifier.reload().unwrap();
     assert!(!changes.has_changed().unwrap());

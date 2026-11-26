@@ -5,16 +5,16 @@ mod keys;
 mod wrapped;
 
 use self::{http::Http, keys::Key};
-use crate::{Events, Role, crypto::LocalKms, egress::ProxyAddress, server::Observer};
+use crate::{
+    Events, Role, config::open_regular, crypto::LocalKms, egress::ProxyAddress, server::Observer,
+};
 use anyhow::{Result, anyhow, ensure};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, de};
 use std::{
     fmt,
-    fs::{File, OpenOptions},
     io::{self, Read, Write},
     marker::PhantomData,
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::LazyLock,
     time::Duration,
@@ -86,18 +86,6 @@ fn json_object<'a, T: Deserialize<'a>>(data: &'a [u8]) -> Option<T> {
 
 fn secret_string<'de, D: Deserializer<'de>>(de: D) -> Result<Zeroizing<String>, D::Error> {
     String::deserialize(de).map(Zeroizing::new)
-}
-
-fn open_regular(path: &Path) -> io::Result<File> {
-    // Projected volumes use symlinks. Check the opened descriptor and avoid blocking on FIFOs.
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(io::ErrorKind::InvalidData.into());
-    }
-    Ok(file)
 }
 
 async fn read_file(path: &Path) -> io::Result<Zeroizing<Vec<u8>>> {

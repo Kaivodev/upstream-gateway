@@ -16,7 +16,7 @@ egress_proxy = "gateway-egress.kaivo-business.svc:3128"
 
 [service_token]
 jwks_file = "/run/kaivo/issuer/jwks.json"
-issuer = "https://kubernetes.default.svc.cluster.local"
+issuer_file = "/run/kaivo/issuer/issuer"
 
 [service_token.service_namespaces]
 payment = "kaivo-business"

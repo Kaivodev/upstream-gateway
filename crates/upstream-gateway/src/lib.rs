@@ -6,6 +6,7 @@ pub static DESCRIPTOR: &[u8] = tonic::include_file_descriptor_set!("upstream");
 
 pub mod crypto;
 mod db;
+mod db_tls;
 pub mod egress;
 mod encoding;
 pub mod wire;
