@@ -44,7 +44,7 @@ vendor:
 	cd guest && cargo vendor --locked --versioned-dirs vendor
 
 .PHONY: proto-sync proto-check integration
-export PROTOBUF_DIR
+export PROTOBUF_DIR PROTOBUF_VERSION
 proto-sync:
 	python3 proto/sync.py sync
 proto-check:

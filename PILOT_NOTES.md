@@ -254,7 +254,7 @@ The builder compares build-config.json with the copy embedded in pluginctl. That
 
 ## UG-3 gateway service
 
-The host workspace contains the twelve library RPCs and the vendored, unpublished upstream contract. The PostgreSQL journal fences executors, commits each request before transport, and seals the terminal response and exchange in one transaction. Immutable credential versions use instance-specific envelope encryption. Routing checks write-time credential fingerprints without opening the credential envelope. The live HTTP/1.1 transport pins the validated destination through direct TLS and CONNECT.
+The host workspace contains the twelve library RPCs and the upstream contract released in protobuf v0.17.0 (commit `8442a37`). The PostgreSQL journal fences executors, commits each request before transport, and seals the terminal response and exchange in one transaction. Immutable credential versions use instance-specific envelope encryption. Routing checks write-time credential fingerprints without opening the credential envelope. The live HTTP/1.1 transport pins the validated destination through direct TLS and CONNECT.
 
 Phase one acceptance used Rust 1.99.1 and PostgreSQL 18.7.
 
@@ -297,9 +297,9 @@ The current contract defines enums only in response trees. A real enum descripto
 
 On 2026-11-22 the reviewer reran the full acceptance suite on the merged working tree, on Apple Silicon with PostgreSQL 18.7:
 
-- `make bindings` regenerated both bindings without drift. `make proto-check`, given a protobuf checkout of the pending contract branch, matched both vendored files byte for byte. The branch `ug3-upstream-contract` is now rebased on protobuf v0.16.0, and the vendored files are unchanged.
+- `make bindings` regenerated both bindings without drift. `make proto-check` matched both vendored files byte for byte against the `ug3-upstream-contract` branch based on protobuf v0.16.0.
 - `make check plugins replay repro deny vet` passed. Replay passed 30, 10, 30 and 10 cases. All four packages reproduced byte for byte in two paths. Both workspaces passed all four cargo-deny checks. cargo vet reported 12 fully audited guest packages.
 - `make integration` passed 14 database tests and 13 binary end-to-end tests, including both SIGKILL cases.
 - `make calibrate stress bench` passed. The maximum step remained 24,154,643 fuel. Each package produced 16 identical stress reports.
 
-The upstream contract remains unpublished. `proto/source.json` records `unpublished` until protobuf tags the release. The target version is v0.17.0 (unreleased). Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
+`proto/source.json` records the released protobuf tag v0.17.0 (commit `8442a37`). For B0, `make proto-sync` preserved both files byte for byte, and `make proto-check` passed locally and against the tag. Temporary copies rejected invalid versions, a one-byte change and a missing tag. Both bindings regenerated without drift, and `make check` passed. In UG-4, payment and reconciliation ran the full stage 2 demo through a trade and a verification instance on the local mTLS stack. Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
