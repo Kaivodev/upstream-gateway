@@ -34,6 +34,9 @@ pub struct Egress {
     tls: TlsConnector,
     #[cfg(test)]
     direct_dials: std::sync::atomic::AtomicUsize,
+    /// Test seam: a direct TCP handshake that never completes.
+    #[cfg(test)]
+    stall_direct_connect: std::sync::atomic::AtomicBool,
 }
 pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
@@ -247,6 +250,8 @@ impl Egress {
             tls,
             #[cfg(test)]
             direct_dials: Default::default(),
+            #[cfg(test)]
+            stall_direct_connect: Default::default(),
         })
     }
     pub fn public_roots() -> RootCertStore {
@@ -264,6 +269,13 @@ impl Egress {
             #[cfg(test)]
             self.direct_dials
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            #[cfg(test)]
+            if self
+                .stall_direct_connect
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                std::future::pending::<()>().await;
+            }
             Box::new(TcpStream::connect(target).await?)
         };
         if origin.tls {

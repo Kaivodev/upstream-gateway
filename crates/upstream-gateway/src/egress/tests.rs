@@ -382,6 +382,33 @@ async fn refused_tcp_fails_open() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tcp_connect_timeout_fails_open() -> Result<()> {
+    // The listener exists, but the direct TCP handshake never completes, as when
+    // SYNs are dropped on the path. Only the open deadline can end it.
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    listener.set_nonblocking(true)?;
+    let addr = listener.local_addr()?;
+    let e = Egress::new(Handle::current(), dev(), None, Egress::public_roots())?;
+    e.stall_direct_connect.store(true, Ordering::Relaxed);
+    let limit = Instant::now() + Duration::from_millis(250);
+    let err = open_error(
+        &e,
+        format!("http://{addr}/pay"),
+        limit,
+        &Cancellation::default(),
+    );
+    let finished = Instant::now();
+    assert_eq!(err.to_string(), "exchange expired");
+    assert!(finished >= limit && finished < limit + Duration::from_secs(1));
+    assert_eq!(e.direct_dials.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+    );
+    Ok(())
+}
+
 async fn stalled_open(proxy: bool, cancel_during_setup: bool) -> Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let addr = listener.local_addr()?;
