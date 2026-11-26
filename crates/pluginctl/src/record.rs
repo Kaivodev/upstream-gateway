@@ -243,10 +243,7 @@ pub fn run(plugin: &Path, origin: &str, out: &Path) -> Result<()> {
     let mut p = crate::build::recording_component(plugin)?;
     let protected = Arc::new(Mutex::new(Scanner::default()));
     protected.lock().unwrap().add(token.as_bytes());
-    match p.manifest.code.as_str() {
-        "epay_v1" => epay::record(&mut p, &sim, origin, &token, &protected)?,
-        _ => anyhow::bail!("no recording recipe"),
-    }
+    epay::record(&mut p, &sim, origin, &token, &protected)?;
     for bytes in p.fixtures.values() {
         check_evidence(bytes, &protected.lock().unwrap())?;
     }

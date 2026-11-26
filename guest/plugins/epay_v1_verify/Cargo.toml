@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "epay_v1_verify"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+kaivo-upstream-sdk = { path = "../../sdk", features = ["verification"] }
+epay-v1-protocol = { path = "../../epay-v1-protocol", features = ["verification"] }

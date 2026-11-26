@@ -62,7 +62,7 @@ fn assert_unknown(step: Step, expected: &str) {
 #[test]
 fn config_requires_a_base_url_decimal_pid_and_bounded_product_bytes() {
     let check = |url: &str, pid: &str, name: &str| Config::new(url.into(), pid.into(), name.into());
-    assert_eq!(config().gateway, "https://example.test/shop");
+    assert_eq!(config().endpoint.gateway, "https://example.test/shop");
     for url in [
         "http://127.0.0.1:8080/",
         "https://example.test/pay%20here",

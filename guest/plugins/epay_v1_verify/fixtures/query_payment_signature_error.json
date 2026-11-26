@@ -1,0 +1,62 @@
+{
+  "name": "query_payment/signature_error",
+  "source": "recorded_upstream_sim_loopback_with_corrupted_query_key_with_shared_merchant_key",
+  "operation": "query_payment",
+  "input": {
+    "money": {
+      "amount": "12345",
+      "currency": "CNY"
+    },
+    "order_id": "test_20261126064942584721000_query_payment_signature_error"
+  },
+  "config": {
+    "gateway": "http://127.0.0.1:58325",
+    "pid": "1001"
+  },
+  "time": "2026-11-26T06:49:42.584721Z",
+  "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
+  "exchanges": [
+    {
+      "request": {
+        "body": "",
+        "headers": {},
+        "method": "GET",
+        "url": "http://127.0.0.1:58325/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_20261126064942584721000_query_payment_signature_error&pid=1001"
+      },
+      "response": {
+        "body": "eyJjb2RlIjotMSwibXNnIjoiXHU1NTQ2XHU2MjM3XHU1YmM2XHU5NGE1XHU5NTE5XHU4YmVmIn0=",
+        "headers": {
+          "cache-control": [
+            "no-store"
+          ],
+          "connection": [
+            "close"
+          ],
+          "content-length": [
+            "56"
+          ],
+          "content-type": [
+            "application/json; charset=utf-8"
+          ],
+          "date": [
+            "Thu, 26 Nov 2026 06:49:43 GMT"
+          ],
+          "x-content-type-options": [
+            "nosniff"
+          ]
+        },
+        "status": 200
+      }
+    }
+  ],
+  "expected": {
+    "category": "rejected",
+    "result": {
+      "code": "epay_code_-1",
+      "outcome": "rejected"
+    },
+    "requests": 1,
+    "responses": 1,
+    "steps": 2
+  }
+}

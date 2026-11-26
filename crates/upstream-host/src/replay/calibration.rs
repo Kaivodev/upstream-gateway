@@ -197,6 +197,37 @@ fn oversized_mapi(f: &mut Fixture) -> Result<()> {
     Ok(())
 }
 
+// EPay queries carry the order in the URL; their flat response supplies the amount.
+fn oversized_epay_query(f: &mut Fixture) -> Result<()> {
+    let x = &mut f.exchanges[0];
+    let (path, query) = x
+        .request
+        .url
+        .split_once('?')
+        .context("missing order query")?;
+    let mut fields = form::parse(query.as_bytes()).context("invalid order query")?;
+    let order = "o".repeat(MAX_ID);
+    form::set(&mut fields, "out_trade_no", &order);
+    x.request.url = format!("{path}?{}", form::encode(&fields));
+
+    f.input["order_id"] = json!(order);
+    f.input["money"]["amount"] = json!(i64::MAX.to_string());
+    let output = &mut f.expected.result.as_mut().context("expected payment")?["payment"];
+    output["order_id"] = json!(order);
+    output["money"] = f.input["money"].clone();
+
+    let r = x.response.as_mut().context("expected order response")?;
+    let mut body = json::object(&BASE64_STANDARD.decode(&r.body)?)?;
+    body["out_trade_no"] = json!(order);
+    body["money"] = json!(format!("{}.{:02}", i64::MAX / 100, i64::MAX % 100));
+    let mut raw = serde_json::to_vec(&body)?;
+    raw.resize(BODY, b' ');
+    r.body = BASE64_STANDARD.encode(raw);
+    r.headers
+        .insert("content-length".into(), vec![BODY.to_string()]);
+    Ok(())
+}
+
 fn oversized_exchange(f: &mut Fixture) -> Result<()> {
     let x = &mut f.exchanges[0];
     let r = x.response.as_mut().context("missing recorded response")?;
@@ -309,6 +340,13 @@ impl Replay {
                 }
                 if mapi {
                     oversized_mapi(&mut large)?
+                } else if f.operation == "query_payment"
+                    && matches!(
+                        self.loaded.manifest.code.as_str(),
+                        "epay_v1" | "epay_v1_verify"
+                    )
+                {
+                    oversized_epay_query(&mut large)?
                 } else if f.operation.ends_with("callback") {
                     oversized_callback(&mut large, &*keys)?
                 } else {

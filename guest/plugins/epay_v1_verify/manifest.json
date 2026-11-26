@@ -1,0 +1,32 @@
+{
+  "type": "verification",
+  "code": "epay_v1_verify",
+  "version": "0.1.0",
+  "abi_version": 3,
+  "domains": [
+    "127.0.0.1",
+    "niuniuapi.qihongmy.cn"
+  ],
+  "secrets": {
+    "merchant_key": "shared"
+  },
+  "secret_fields": {
+    "query": [
+      "key"
+    ]
+  },
+  "public_keys": [],
+  "config": {
+    "gateway": {
+      "type": "string",
+      "required": true
+    },
+    "pid": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "capabilities": [
+    "query_payment"
+  ]
+}

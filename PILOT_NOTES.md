@@ -401,3 +401,50 @@ Verification on aarch64-apple-darwin with Rust 1.99.1:
 - `make plugins replay repro` rebuilt all five packages and passed all 89 cases. For each simulator, the trade and verification reports covered 30 and 10 cases respectively. EPay V1 covered nine. A direct `cmp` against the five reports saved before these review changes found all five byte-identical. The independent two-path build also reproduced all five packages byte for byte.
 - Offline `make deny vet` passed advisories, bans, licenses and sources in both workspaces. The host workspace reported duplicate-version warnings. Frozen guest vet reported 12 fully audited packages.
 - `make bench calibrate stress` passed for all five packages. Across 100 release iterations, EPay verify_callback took 314,292 ns at p50 and 5,770,292 ns at p99. A standalone repeat measured 77,917 ns at p50 and 112,459 ns at p99. Both runs used 1,179,648 peak guest bytes. EPay peaked at 12,621,226 fuel in the create_payment boundary case. The highest single step overall was 24,152,683 fuel for sim_form_md5. For each package, four workers ran four replays apiece. All 16 reports matched the serial baseline.
+
+## UG-6 EPay V1 order query and verifier
+
+The trading component `epay_v1` 0.2.0 and the query-only `epay_v1_verify` 0.1.0 share `epay-v1-protocol`. Both issue a bodyless GET to `api.php` with `act=order`, the configured PID, the merchant order ID and a form-encoded merchant key placeholder. Both manifests declare the query field `key`. The host expands its value only for transport. The verifier requires just `gateway` and `pid`. Under A136 ③, the verification instance separately seals the trading instance's merchant key. The owner must approve this credential arrangement.
+
+After HTTP 200, the plugin parses the JSON object, accepting a UTF-8 BOM, surrounding whitespace and PHP-style escapes. An integer or decimal-string code other than 1 yields an upstream rejection. For success, the plugin checks the PID and merchant order ID and requires a nonempty upstream trade number. It converts the response's yuan string to integer CNY minor units. The host compares this amount with the input. Status 0 yields pending and 1 yields paid. For paid orders, a present, nonempty `endtime` must be a valid civil date and time to the second. The plugin interprets it as Asia/Shanghai at fixed UTC+8 and reports UTC. Missing, null and empty paid times are omitted. Malformed identity, amount, status or time yields an unknown outcome. Query responses carry no payment instruction or expiry.
+
+Refunds are outside the initial EPay V1 release. The upstream provides neither a refund query nor a close-payment interface. UG-8 still needs the manual refund procedure. Payment owns the outstanding decision on handling EPay orders when the upstream cannot close them.
+
+Both sets below were recorded in temporary directories against one local test simulator. For queries, the recorder created and paid the setup orders directly through the simulator and skipped creation for the missing-order case. Each role used its corresponding host. The invalid-key case changed only the outgoing encoded key value to equally many zeroes. All query recordings retained the placeholder. Independent inspection confirmed the simulator's distinct missing-order and invalid-key responses, the 123.46 CNY mismatch, and the UTC conversion for both paid results. The 3,000 ms simulator fault exceeded the two-second transport deadline. The recorder checked all fixtures for protected values and expanded URLs before publication and replayed them with fresh credentials. The installed files matched the temporary sets byte for byte. The simulator was stopped.
+
+| Operation | Scenario | Trading | Verification | Host error | Upstream code |
+| --- | --- | --- | --- | --- | --- |
+| create_payment | success | completed (pending, URL) | — | — | — |
+| create_payment | rejected | rejected | — | — | epay_code_-1 |
+| create_payment | signature_error | rejected | — | — | epay_code_-1 |
+| create_payment | timeout | unknown | — | transport_error | — |
+| query_payment | success | completed (paid, paid_at) | completed (paid, paid_at) | — | — |
+| query_payment | rejected | rejected | rejected | — | epay_code_-1 |
+| query_payment | signature_error | rejected | rejected | — | epay_code_-1 |
+| query_payment | timeout | unknown | unknown | transport_error | — |
+| query_payment | amount_mismatch | unknown | unknown | amount_mismatch | — |
+| route_callback | success | completed | — | — | — |
+| route_callback | malformed | not_sent | — | plugin_error | — |
+| verify_callback | success | completed | — | — | — |
+| verify_callback | signature_error | not_sent | — | plugin_error | — |
+| verify_callback | amount_mismatch | not_sent | — | amount_mismatch | — |
+
+All nine pre-existing cases matched `7747c9a` in category, host error, upstream code and counts of steps, requests and responses.
+
+On aarch64-apple-darwin with Rust 1.99.1, two independent checkout and build paths reproduced all six complete packages byte for byte. The table gives the component file size and digest, and the package-format digest over fixture paths and bytes.
+
+| Component | Bytes | Component SHA-256 | Fixture-set SHA-256 |
+| --- | ---: | --- | --- |
+| epay_v1 | 139,838 | `52b0848cf7f1594a4feec352fd45b4c170bac60bbe983a108960aa4b9a3f853d` | `15a2251f71df8a3317acaf3d849eb142cdde34d1851b947aacd798d370d02250` |
+| epay_v1_verify | 108,715 | `7a6741b4607ae05b7a5205c7c6c547fab306d1d55584d275e1b39071815843e4` | `1c5ec88b43c2326d816305e610ec8ba3e00ddadb7ff459f1d4495edf54e3fa91` |
+| sim_form_md5 | 124,760 | `4576b180aee36d2a6d0e68602dbaf7d3901bfc79c28217c3af620d80ddd4d6a9` | `6fa220ad2cc0ca5787c6a9ad07e480e227172f715d24687ac664cf05fdd3104f` |
+| sim_form_md5_verify | 94,830 | `32ff97d5f420bfdb65da48b1f491c3972ba54f6a2569e2dc763f60d6dd795513` | `fe1720960f3109f0dca94972b4645e6c25b0bcebed537285bc850a7cd4dcf5c0` |
+| sim_json_rsa | 115,515 | `65319b01b15532c9f38a24cb58e8172c8d380222f7c15cee8eeb8d9ecb064a9b` | `0825720e59c8a58ec16fa62dd84fdeaf5f09de287905f269ae750b92440a50f4` |
+| sim_json_rsa_verify | 93,575 | `2faeb40d9c46ca8fe3234b33a08159824a7aeb455ea61cdd836e61b1205901db` | `ea422021b85216fa141fe26337158f0d39278b9a77b64460dfe143186b58d262` |
+
+- `make bindings` reproduced the checked-in SDK bindings. The SDK diff was empty.
+- `make check` passed contract checks, formatting, Clippy and tests. EPay passed 22 tests with the trade feature (16 original and six query tests) and six query tests with verification. The host passed 26 tests, the gateway passed 13 database-independent tests, and pluginctl passed 13 unit and four integration tests. A recorder test observed the expanded GET and its corrupted variant on a loopback socket and checked their saved templates.
+- `make plugins replay repro` built six components, replayed all 99 cases and reproduced the packages. All 80 case records from the four simulator packages matched the reports saved before the change.
+- `make deny` passed advisories, bans, licenses and sources for both workspaces, with duplicate-version warnings in the host workspace. The aggregate make command stopped at `vet` because the sandbox denied the default cache lock. Rerunning `make vet` with a writable temporary cache and the same locked audits passed with 12 fully audited packages.
+- `make integration` stopped at its environment check for `AIPAY_TEST_DATABASE_URL`. The 14 PostgreSQL tests and 13 release-binary tests remain unverified in this run.
+- `make bench calibrate stress` passed for all six packages. Over 100 release iterations, EPay trading's verify_callback measured 125,458 ns at p50 and 246,833 ns at p99. The verifier's query_payment measured 173,500 ns at p50 and 285,458 ns at p99. Both used 1,179,648 peak guest bytes. The EPay query calibration exercised a 100-byte order ID, the maximum signed 64-bit minor-unit amount and a 256 KiB response, reaching 7,550,518 fuel for trading and 7,549,297 for verification. Each package's 16 concurrent replay reports matched its serial baseline.

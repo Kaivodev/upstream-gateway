@@ -38,14 +38,14 @@ impl Simulator {
         Ok(Self { addr })
     }
 
-    pub fn pay_target<'a>(&self, url: &'a str) -> Result<&'a str> {
+    pub fn target<'a>(&self, url: &'a str) -> Result<&'a str> {
         let rest = url
             .strip_prefix("http://")
-            .context("invalid simulator pay URL")?;
-        let slash = rest.find('/').context("missing payment path")?;
+            .context("invalid simulator URL")?;
+        let slash = rest.find('/').context("missing simulator path")?;
         ensure!(
             Self::parse(&url[..7 + slash])?.addr == self.addr,
-            "foreign payment origin"
+            "foreign simulator origin"
         );
         let path = &rest[slash..];
         check_target(path)?;
@@ -83,25 +83,7 @@ impl Simulator {
         )
     }
 
-    pub fn post_form(
-        &self,
-        url: &str,
-        body: &[u8],
-        deadline: Instant,
-        cancel: &Cancellation,
-    ) -> Result<Response> {
-        let path = self.pay_target(url)?;
-        self.exchange(
-            "POST",
-            path,
-            &format!("Content-Type: {FORM}\r\n"),
-            body,
-            deadline,
-            cancel,
-        )
-    }
-
-    fn exchange(
+    pub(super) fn exchange(
         &self,
         method: &str,
         path: &str,
@@ -414,7 +396,7 @@ mod tests {
             assert!(Simulator::parse(url).is_err(), "{url}");
         }
         assert_eq!(
-            a.pay_target("http://127.0.0.1:2345/path?x=y").unwrap(),
+            a.target("http://127.0.0.1:2345/path?x=y").unwrap(),
             "/path?x=y"
         );
         for url in [
@@ -424,7 +406,7 @@ mod tests {
             "http://127.0.0.1:2345/path\r\nX:y",
             "http://127.0.0.1:2345/#fragment",
         ] {
-            assert!(a.pay_target(url).is_err());
+            assert!(a.target(url).is_err());
         }
     }
 

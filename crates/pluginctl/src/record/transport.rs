@@ -1,33 +1,49 @@
-//! Capture the single mapi exchange against the selected loopback simulator.
+//! Capture the single mapi or order query exchange against the selected loopback simulator.
 use super::http::{FORM, Simulator};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use base64::prelude::*;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     io::{self, Cursor},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use upstream_host::{
     environment::{Cancellation, Incoming, Transport},
-    replay::{SignedQuery, normalized_exchange},
+    replay::{Scanner, SignedQuery, normalized_exchange},
     types::HttpRequest,
 };
 
 pub(super) struct CaptureTransport {
     pub sim: Simulator,
     pub corrupt_signature: bool,
+    pub protected: Arc<Mutex<Scanner>>,
     pub exchanges: Mutex<Vec<Value>>,
 }
 
 impl CaptureTransport {
-    fn post(
+    fn exchange(
         &self,
         request: &HttpRequest,
         deadline: Instant,
         cancel: &Cancellation,
     ) -> Result<super::http::Response> {
+        let target = self.sim.target(&request.url)?;
+        if request.method == "GET" {
+            ensure!(
+                request.headers.is_empty() && request.body.is_empty(),
+                "unexpected order query"
+            );
+            let corrupted;
+            let path = if self.corrupt_signature {
+                corrupted = corrupt_query_key(target)?;
+                &corrupted
+            } else {
+                target
+            };
+            return self.sim.exchange("GET", path, "", &[], deadline, cancel);
+        }
         ensure!(
             request.method == "POST"
                 && matches!(
@@ -43,8 +59,38 @@ impl CaptureTransport {
         } else {
             &request.body
         };
-        self.sim.post_form(&request.url, body, deadline, cancel)
+        self.sim.exchange(
+            "POST",
+            target,
+            &format!("Content-Type: {FORM}\r\n"),
+            body,
+            deadline,
+            cancel,
+        )
     }
+}
+
+// The SDK encodes the literal field name as "key". Preserve the exact wire
+// spelling and width of every other byte, including escapes in other fields.
+fn corrupt_query_key(target: &str) -> Result<String> {
+    let (path, query) = target.split_once('?').context("missing order query")?;
+    let mut target = format!("{path}?");
+    let mut found = false;
+    for (i, pair) in query.split('&').enumerate() {
+        if i != 0 {
+            target.push('&');
+        }
+        if let Some(value) = pair.strip_prefix("key=") {
+            ensure!(!found && !value.is_empty(), "invalid order query key");
+            found = true;
+            target.push_str("key=");
+            target.extend(std::iter::repeat_n('0', value.len()));
+        } else {
+            target.push_str(pair);
+        }
+    }
+    ensure!(found, "missing order query key");
+    Ok(target)
 }
 
 impl Transport for CaptureTransport {
@@ -58,7 +104,10 @@ impl Transport for CaptureTransport {
         // Record the header, query and form templates. Only the simulator receives
         // the expanded request, even when transport fails.
         let mut exchange = json!({"request": normalized_exchange(template, request)});
-        let result = self.post(
+        if template.url != request.url {
+            self.protected.lock().unwrap().add(request.url.as_bytes());
+        }
+        let result = self.exchange(
             request,
             deadline.min(Instant::now() + Duration::from_secs(2)),
             cancel,
@@ -104,6 +153,7 @@ mod tests {
         CaptureTransport {
             sim: Simulator::parse(origin).unwrap(),
             corrupt_signature: true,
+            protected: Default::default(),
             exchanges: Mutex::default(),
         }
     }
@@ -197,6 +247,63 @@ mod tests {
             body == format!("z=a%2fb&%73ign={MARK}&type=alipay&key={{{{secret:shared}}}}")
                 .as_bytes()
         );
+    }
+
+    #[test]
+    fn order_query_sends_expanded_or_corrupted_key_and_protects_the_original_url() {
+        for corrupt in [false, true] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let mut t = transport(&origin);
+            t.corrupt_signature = corrupt;
+            let mut random = [0; 16];
+            getrandom::fill(&mut random).unwrap();
+            let key = format!("{}%2B%2F", upstream_host::package::hex(&random));
+            let url = |key: &str| {
+                format!("{origin}/api.php?act=order&key={key}&out_trade_no=A%2fb&pid=42")
+            };
+            let get = |url| HttpRequest {
+                method: "GET".into(),
+                url,
+                headers: vec![],
+                body: vec![],
+            };
+            let template = get(url("%7B%7Bsecret%3Amerchant_key%7D%7D"));
+            let expanded = get(url(&key));
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut lines = BufReader::new(&stream).lines().map(Result::unwrap);
+                let target = lines.next().unwrap();
+                assert!(
+                    lines
+                        .take_while(|s| !s.is_empty())
+                        .all(|s| !s.to_ascii_lowercase().starts_with("content-type:"))
+                );
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                    .unwrap();
+                target
+            });
+            t.send(
+                &template,
+                &expanded,
+                Instant::now() + Duration::from_secs(2),
+                &Cancellation::default(),
+            )
+            .unwrap();
+            let sent = if corrupt { "0".repeat(key.len()) } else { key };
+            assert!(
+                server.join().unwrap()
+                    == format!(
+                        "GET /api.php?act=order&key={sent}&out_trade_no=A%2fb&pid=42 HTTP/1.1"
+                    )
+            );
+            let captured = &t.exchanges.lock().unwrap()[0]["request"];
+            assert!(captured["url"] == template.url);
+            let protected = t.protected.lock().unwrap();
+            assert!(!protected.bytes(&serde_json::to_vec(captured).unwrap()));
+            assert!(protected.bytes(BASE64_STANDARD.encode(&expanded.url).as_bytes()));
+        }
     }
 
     #[test]

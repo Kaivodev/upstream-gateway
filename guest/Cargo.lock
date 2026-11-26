@@ -10,12 +10,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "epay_v1"
-version = "0.1.0"
+name = "epay-v1-protocol"
+version = "0.2.0"
 dependencies = [
  "kaivo-upstream-sdk",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "epay_v1"
+version = "0.2.0"
+dependencies = [
+ "epay-v1-protocol",
+ "kaivo-upstream-sdk",
+]
+
+[[package]]
+name = "epay_v1_verify"
+version = "0.1.0"
+dependencies = [
+ "epay-v1-protocol",
+ "kaivo-upstream-sdk",
 ]
 
 [[package]]

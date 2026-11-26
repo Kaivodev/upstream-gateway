@@ -1,7 +1,7 @@
 {
   "type": "payment",
   "code": "epay_v1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "abi_version": 3,
   "domains": [
     "127.0.0.1",
@@ -9,6 +9,11 @@
   ],
   "secrets": {
     "merchant_key": "shared"
+  },
+  "secret_fields": {
+    "query": [
+      "key"
+    ]
   },
   "public_keys": [],
   "config": {
@@ -27,6 +32,7 @@
   },
   "capabilities": [
     "create_payment",
+    "query_payment",
     "route_callback",
     "verify_callback"
   ],

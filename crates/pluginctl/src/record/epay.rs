@@ -67,18 +67,10 @@ impl Account {
     pub fn pay(
         &self,
         sim: &Simulator,
-        token: &str,
         notify: &str,
         order: &str,
-        scenario: &str,
         protected: &mut Scanner,
     ) -> Result<()> {
-        let settings = match scenario {
-            "signature_error" => json!({"callback_invalid_signature":true}),
-            "amount_mismatch" => json!({"callback_amount":12346}),
-            _ => json!({}),
-        };
-        set_scenario(sim, token, order, &settings)?;
         let mut fields = BTreeMap::from([
             ("pid", self.pid.as_str()),
             ("type", "alipay"),
@@ -106,7 +98,7 @@ impl Account {
         ensure!(response.status == 200, "simulator purchase failed");
         let result = upstream_host::json::object(&response.body)?;
         ensure!(result["code"] == 1, "simulator rejected purchase");
-        let path = sim.pay_target(
+        let path = sim.target(
             result["payurl"]
                 .as_str()
                 .context("missing simulator pay URL")?,
@@ -211,20 +203,35 @@ impl Case {
     }
 }
 
-fn check_create(scenario: &str, execution: &Execution, exchanges: &[Value]) -> Result<()> {
+fn check_exchange(
+    operation: &str,
+    scenario: &str,
+    execution: &Execution,
+    exchanges: &[Value],
+) -> Result<()> {
     ensure!(
         exchanges.len() == 1 && execution.requests == 1,
-        "expected one mapi exchange"
+        "expected one simulator exchange"
     );
     let result = execution.result.as_ref().unwrap_or(&Value::Null);
     let ok = match scenario {
+        "success" if operation == "query_payment" => {
+            execution.category == "completed"
+                && result["payment"]["status"] == "paid"
+                && result["payment"]["paid_at"].is_string()
+        }
         "success" => {
             execution.category == "completed"
                 && result["payment"]["status"] == "pending"
                 && result["payment"]["url"].is_string()
         }
-        "rejected" => execution.category == "rejected" && result["code"] == "epay_code_-1",
-        "signature_error" => execution.category == "rejected",
+        "rejected" | "signature_error" => {
+            execution.category == "rejected" && result["code"] == "epay_code_-1"
+        }
+        "amount_mismatch" => {
+            execution.category == "unknown"
+                && execution.error_code.as_deref() == Some("amount_mismatch")
+        }
         "timeout" => {
             execution.category == "unknown"
                 && execution.error_code.as_deref() == Some("transport_error")
@@ -232,7 +239,7 @@ fn check_create(scenario: &str, execution: &Execution, exchanges: &[Value]) -> R
         }
         _ => false,
     };
-    ensure!(ok, "unexpected mapi execution for {scenario}");
+    ensure!(ok, "unexpected execution for {operation}/{scenario}");
     Ok(())
 }
 
@@ -243,7 +250,19 @@ pub(super) fn record(
     token: &str,
     protected: &Arc<Mutex<Scanner>>,
 ) -> Result<()> {
-    let operations = ["create_payment", "route_callback", "verify_callback"];
+    let (role, operations): (_, &[&str]) = match p.manifest.code.as_str() {
+        "epay_v1" => (
+            "payment",
+            &[
+                "create_payment",
+                "query_payment",
+                "route_callback",
+                "verify_callback",
+            ],
+        ),
+        "epay_v1_verify" => ("verification", &["query_payment"]),
+        _ => anyhow::bail!("no recording recipe"),
+    };
     ensure!(
         p.manifest.capabilities.len() == operations.len()
             && operations.iter().all(|op| p
@@ -263,19 +282,20 @@ pub(super) fn record(
     );
     let account = Arc::new(Account::fetch(sim, token)?);
     protected.lock().unwrap().add(&account.key);
-    let config = BTreeMap::from([
+    let mut config = BTreeMap::from([
         ("gateway".into(), origin.to_owned()),
         ("pid".into(), account.pid.clone()),
-        ("product_name".into(), PRODUCT.into()),
     ]);
-    let host = Host::new(Options::replay(&p.manifest.r#type))?;
+    if role == "payment" {
+        config.insert("product_name".into(), PRODUCT.into());
+    }
+    let host = Host::new(Options::replay(role))?;
     let loaded = host.load(p)?;
     let listener = Listener::start()?;
-    for operation in operations {
+    for &operation in operations {
         for &scenario in upstream_host::replay::required_scenarios(operation) {
             let order = format!("test_{stamp}_{operation}_{scenario}");
-            let create = operation == "create_payment";
-            let (mut input, callback) = if create {
+            let (mut input, callback) = if operation == "create_payment" {
                 let settings = match scenario {
                     "rejected" => json!({"create_fault":"reject"}),
                     "timeout" => json!({"create_fault":"timeout","fault_delay_ms":3000}),
@@ -288,16 +308,30 @@ pub(super) fn record(
                     input["device"] = json!("pc");
                 }
                 (input, None)
+            } else if operation == "query_payment" {
+                if scenario != "rejected" {
+                    set_scenario(sim, token, &order, &json!({"callback_disabled":true}))?;
+                    account.pay(sim, &listener.url, &order, &mut protected.lock().unwrap())?;
+                }
+                let settings = match scenario {
+                    "timeout" => json!({"api_fault":"timeout","fault_delay_ms":3000}),
+                    "amount_mismatch" => json!({"query_amount":12346}),
+                    _ => json!({}),
+                };
+                set_scenario(sim, token, &order, &settings)?;
+                (
+                    json!({"order_id":order, "money":{"amount":"12345","currency":"CNY"}}),
+                    None,
+                )
             } else {
+                let settings = match scenario {
+                    "signature_error" => json!({"callback_invalid_signature":true}),
+                    "amount_mismatch" => json!({"callback_amount":12346}),
+                    _ => json!({}),
+                };
+                set_scenario(sim, token, &order, &settings)?;
                 listener.expect(&order);
-                account.pay(
-                    sim,
-                    token,
-                    &listener.url,
-                    &order,
-                    scenario,
-                    &mut protected.lock().unwrap(),
-                )?;
+                account.pay(sim, &listener.url, &order, &mut protected.lock().unwrap())?;
                 let case = Case::from_notification(
                     operation,
                     scenario,
@@ -308,8 +342,9 @@ pub(super) fn record(
                 (case.input.clone(), Some(case))
             };
             let env = Arc::new(CaptureEnv {
-                transport: create.then(|| CaptureTransport {
+                transport: callback.is_none().then(|| CaptureTransport {
                     sim: *sim,
+                    protected: protected.clone(),
                     corrupt_signature: scenario == "signature_error",
                     exchanges: Mutex::default(),
                 }),
@@ -339,17 +374,24 @@ pub(super) fn record(
             } else {
                 exchanges =
                     std::mem::take(&mut *env.transport.as_ref().unwrap().exchanges.lock().unwrap());
-                check_create(scenario, &execution, &exchanges)?;
-                let source = if scenario == "signature_error" {
+                check_exchange(operation, scenario, &execution, &exchanges)?;
+                let source = if scenario == "signature_error" && operation == "query_payment" {
+                    "recorded_upstream_sim_loopback_with_corrupted_query_key"
+                } else if scenario == "signature_error" {
                     "recorded_upstream_sim_loopback_with_corrupted_request_signature"
                 } else {
                     "recorded_upstream_sim_loopback"
                 };
                 (source, false)
             };
+            let source = if role == "verification" {
+                format!("{source}_with_shared_merchant_key")
+            } else {
+                source.to_owned()
+            };
             let fixture = Evidence {
                 name: format!("{operation}/{scenario}"),
-                source,
+                source: &source,
                 operation,
                 input,
                 config: &config,
