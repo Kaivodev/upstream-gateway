@@ -2,6 +2,10 @@ use super::*;
 use serde_json::json;
 
 fn run(order_id: &str, responses: Vec<HttpResponse>) -> Step {
+    run_with_timeout(order_id, responses, "2400")
+}
+
+fn run_with_timeout(order_id: &str, responses: Vec<HttpResponse>, timeout: &str) -> Step {
     query(
         PaymentCall {
             input: PaymentInput {
@@ -13,7 +17,8 @@ fn run(order_id: &str, responses: Vec<HttpResponse>) -> Step {
             },
             responses,
         },
-        &Endpoint::new("https://provider.test/shop/".into(), "42".into()).unwrap(),
+        Endpoint::new("https://provider.test/shop/".into(), "42".into(), timeout),
+        || parse_utc_time("2024-02-28T16:40:00Z").unwrap(),
     )
 }
 
@@ -65,7 +70,9 @@ fn get_encodes_the_entire_placeholder_in_the_key_value() {
 
 #[test]
 fn paid_uses_response_money_and_converts_shanghai_midnight_to_utc() {
-    let p = payment(response(200, &serde_json::to_vec(&paid()).unwrap()));
+    let mut v = paid();
+    v["addtime"] = json!("2024-02-28 23:59:59");
+    let p = payment(response(200, &serde_json::to_vec(&v).unwrap()));
     assert_eq!(p.order_id, "A");
     assert_eq!(p.upstream_id, "T7");
     assert_eq!(
@@ -78,6 +85,82 @@ fn paid_uses_response_money_and_converts_shanghai_midnight_to_utc() {
         Some("2024-02-28T16:00:01Z")
     );
     assert!(p.url.is_none() && p.qrcode.is_none() && p.expires_at.is_none());
+}
+
+fn unpaid(addtime: Option<Value>) -> Step {
+    let mut v = paid();
+    v["status"] = json!(0);
+    if let Some(time) = addtime {
+        v["addtime"] = time;
+    }
+    response(200, &serde_json::to_vec(&v).unwrap())
+}
+
+#[test]
+fn unpaid_closes_at_the_threshold_inclusively_with_an_inference_code() {
+    let pending = payment(unpaid(Some(json!("2024-02-29 00:00:01"))));
+    assert_eq!(pending.status, PaymentStatus::Pending);
+    assert!(pending.paid_at.is_none());
+    for addtime in ["2024-02-29 00:00:00", "2024-02-28 23:59:59"] {
+        let step = unpaid(Some(json!(addtime)));
+        let Step::Result(OperationResult::Completed(Completion {
+            value: Output::Payment(p),
+            code,
+        })) = step
+        else {
+            panic!("expected payment: {step:?}")
+        };
+        assert_eq!(code.as_deref(), Some("timeout_inferred_close"));
+        assert_eq!(p.status, PaymentStatus::Closed);
+        assert!(p.paid_at.is_none());
+    }
+}
+
+#[test]
+fn missing_invalid_and_future_addtime_keep_unpaid_pending_without_a_code() {
+    for addtime in [
+        None,
+        Some(Value::Null),
+        Some(json!("")),
+        Some(json!(0)),
+        Some(json!("2024-02-30 00:00:00")),
+        Some(json!("2024-02-29T00:00:00Z")),
+        Some(json!("2024-02-29 00:45:01")),
+        Some(json!("2024-02-29 00:44:59")),
+    ] {
+        let p = payment(unpaid(addtime));
+        assert_eq!(p.status, PaymentStatus::Pending);
+        assert!(p.paid_at.is_none());
+    }
+}
+
+#[test]
+fn only_canonical_timeouts_in_range_allow_a_request() {
+    for timeout in [
+        "",
+        "0",
+        "-1",
+        "01",
+        "+1",
+        "2592001",
+        "abc",
+        "1.0",
+        " 1",
+        "１",
+        "99999999999999999999999",
+    ] {
+        let step = run_with_timeout("A", vec![], timeout);
+        assert!(
+            matches!(step, Step::Result(OperationResult::Error(Some(ref c))) if c == "config"),
+            "{timeout}: {step:?}"
+        );
+    }
+    for timeout in ["1", "2592000"] {
+        assert!(matches!(
+            run_with_timeout("A", vec![], timeout),
+            Step::Request(_)
+        ));
+    }
 }
 
 #[test]

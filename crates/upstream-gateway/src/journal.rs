@@ -207,8 +207,12 @@ impl Lease {
             return Ok(bytes);
         }
         let row = self.lock(g, &tx).await?;
+        let event = out.completion_event(row.get("method"));
         let response = g.terminal(&tx, row, out).await?;
         tx.commit().await.db()?;
+        if let Some(code) = event {
+            g.0.events.completion(code);
+        }
         Ok(response)
     }
 }

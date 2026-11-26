@@ -448,3 +448,62 @@ On aarch64-apple-darwin with Rust 1.99.1, two independent checkout and build pat
 - `make deny` passed advisories, bans, licenses and sources for both workspaces, with duplicate-version warnings in the host workspace. The aggregate make command stopped at `vet` because the sandbox denied the default cache lock. Rerunning `make vet` with a writable temporary cache and the same locked audits passed with 12 fully audited packages.
 - `make integration` stopped at its environment check for `AIPAY_TEST_DATABASE_URL`. The 14 PostgreSQL tests and 13 release-binary tests remain unverified in this run.
 - `make bench calibrate stress` passed for all six packages. Over 100 release iterations, EPay trading's verify_callback measured 125,458 ns at p50 and 246,833 ns at p99. The verifier's query_payment measured 173,500 ns at p50 and 285,458 ns at p99. Both used 1,179,648 peak guest bytes. The EPay query calibration exercised a 100-byte order ID, the maximum signed 64-bit minor-unit amount and a 256 KiB response, reaching 7,550,518 fuel for trading and 7,549,297 for verification. Each package's 16 concurrent replay reports matched its serial baseline.
+
+## v0.4.0 (A140) EPay V1 timeout-inferred closure
+
+The trading plugin `epay_v1` moves from 0.2.0 to 0.3.0 and the query-only verifier `epay_v1_verify` from 0.1.0 to 0.2.0. Both manifests require the string `unpaid_timeout_seconds`. Add it to each existing trading channel and verification account before activating the new packages. The shared parser accepts ASCII decimal integers from 1 through 2592000 seconds (30 days), without signs, whitespace or leading zeroes. An invalid value fails configuration validation before dispatch.
+
+Both roles validate the EPay response code, identity and amount as before. For numeric status 0 they interpret `addtime` as Shanghai civil time to the second (`YYYY-MM-DD HH:MM:SS`, UTC+08:00). A missing, null or invalid value, or a value more than 300 seconds ahead of the host clock, leaves the payment pending. A future timestamp within the tolerance also stays pending until its full timeout elapses. At or after `addtime + unpaid_timeout_seconds`, the result is completed with payment status `closed`, no `paid_at` and completion code `timeout_inferred_close`. Status 1 continues to report paid under the existing `endtime` rules. Other statuses yield `response_status` in the guest.
+
+The code denotes a local inference. EPay continues to report unpaid and provides no confirmation of upstream closure. The exchange retains the raw response, including status 0 and `addtime`. The approved channel or verification configuration supplies the threshold. The gateway carries the completion code in `ExecutionResult.upstream_code` and the canonical evidence. After committing a new successful query with this code and a closed payment, the gateway emits the fixed event `gateway completion timeout_inferred_close`. Log-based metrics can count this reason separately from ordinary closure, paid results and transport timeouts.
+
+### Recorded EPay cases
+
+Both roles were recorded against a test simulator bound to IPv4 loopback, with an in-memory control token. Each `unpaid_closed` case created an order, left it unpaid, waited two seconds and queried it with the recorded threshold `"1"`. Relative to the raw Shanghai creation time, the recorded host clocks were 2.192179 seconds later for trading and 2.073358 seconds later for verification. The other 19 cases were re-recorded with `"2400"` (the 10-minute instruction lifetime plus the 30-minute late-payment window). Their categories, codes and step, request and response counts matched the preceding release. All 21 installed fixtures matched the recorder output byte for byte. The simulator was stopped after recording.
+
+Replay accepts `query_payment/unpaid_closed` as an optional scenario because the policy is specific to upstreams that infer unpaid closure. It requires a response, a completed closed payment without a paid time, and the inference code. The two columns below cover 15 trading and six verification cases. Codes are present only where shown.
+
+| Operation | Scenario | Trading | Verification | Host error | Result code |
+| --- | --- | --- | --- | --- | --- |
+| create_payment | success | completed (pending, URL) | — | — | — |
+| create_payment | rejected | rejected | — | — | epay_code_-1 |
+| create_payment | signature_error | rejected | — | — | epay_code_-1 |
+| create_payment | timeout | unknown | — | transport_error | — |
+| query_payment | success | completed (paid) | completed (paid) | — | — |
+| query_payment | unpaid_closed | completed (closed) | completed (closed) | — | timeout_inferred_close |
+| query_payment | rejected | rejected | rejected | — | epay_code_-1 |
+| query_payment | signature_error | rejected | rejected | — | epay_code_-1 |
+| query_payment | timeout | unknown | unknown | transport_error | — |
+| query_payment | amount_mismatch | unknown | unknown | amount_mismatch | — |
+| route_callback | success | completed | — | — | — |
+| route_callback | malformed | not_sent | — | plugin_error | — |
+| verify_callback | success | completed | — | — | — |
+| verify_callback | signature_error | not_sent | — | plugin_error | — |
+| verify_callback | amount_mismatch | not_sent | — | amount_mismatch | — |
+
+### Owner follow-up
+
+Payment still owns scheduling queries, skipping an unsupported `close_payment` operation and registering a system cancellation intent against the current hold and version. The owner must approve the per-channel threshold and enforce a lower bound of the instruction lifetime plus the late-payment window. Payment uses the configured hard upper bound for that window and reconciliation checks the actual window. Reconciliation still requires two observations separated by at least the late-payment window before authorizing cancellation. A payment received after cancellation follows UG-8 for manual seller refund and platform review.
+
+### Components and fixture digests
+
+Measured on aarch64-apple-darwin with Rust 1.99.1. The fixture digest covers length-prefixed package-relative paths and file bytes in package order.
+
+| Component | Bytes | Component SHA-256 | Fixture-set SHA-256 |
+| --- | ---: | --- | --- |
+| epay_v1 | 140,265 | `f76b82e3879bb17836948119847c8aca4cead1aec72a261ab3a149cff8ca1853` | `0e4140f90ed8d2e8531a8fb3c72eed4543e18ea83cd4714fef904e2f70e0e2db` |
+| epay_v1_verify | 109,205 | `6fb367138f1e0f03a3896ede2f1022dffe9bb7861bcaf67bb75582d1613679d7` | `e31b807c72512335a99e845f2772be733aa9df841587117ec35cd730a1ab7882` |
+| sim_form_md5 | 124,760 | `4576b180aee36d2a6d0e68602dbaf7d3901bfc79c28217c3af620d80ddd4d6a9` | `6fa220ad2cc0ca5787c6a9ad07e480e227172f715d24687ac664cf05fdd3104f` |
+| sim_form_md5_verify | 94,830 | `32ff97d5f420bfdb65da48b1f491c3972ba54f6a2569e2dc763f60d6dd795513` | `fe1720960f3109f0dca94972b4645e6c25b0bcebed537285bc850a7cd4dcf5c0` |
+| sim_json_rsa | 115,515 | `65319b01b15532c9f38a24cb58e8172c8d380222f7c15cee8eeb8d9ecb064a9b` | `0825720e59c8a58ec16fa62dd84fdeaf5f09de287905f269ae750b92440a50f4` |
+| sim_json_rsa_verify | 93,575 | `2faeb40d9c46ca8fe3234b33a08159824a7aeb455ea61cdd836e61b1205901db` | `ea422021b85216fa141fe26337158f0d39278b9a77b64460dfe143186b58d262` |
+
+### Verification
+
+- `make bindings` regenerated both SDK bindings. `git diff --exit-code -- guest/sdk/src` passed.
+- `make check` passed the pinned contract digest check, formatting, Clippy and tests. The EPay protocol passed 25 tests with the trade feature and nine with verification. Tests cover the second before, at and after expiry, invalid and future timestamps, paid precedence and invalid configuration before dispatch. The host passed 27 tests, the gateway passed 14 database-independent tests, and pluginctl passed 13 unit and four integration tests. The new host test rejects incorrect optional-scenario expectations. The gateway test checks projection of the recorded completion code and distinguishes inferred closure from an ordinary closure or a paid result.
+- `make plugins replay repro` built all six components, passed all 101 replays (21 EPay and 80 simulator cases), and reproduced all six complete packages byte for byte in two independent source and build directories. The packaged fixtures matched the source fixture paths and bytes.
+- The default aggregate command stopped at `deny` because the sandbox denied the advisory database lock. A separate default `make vet` also encountered a read-only cache lock. The offline `make deny vet` rerun passed advisories, bans, licenses and sources in both workspaces and reported 12 fully audited guest packages. Deny used each workspace's policy and the default cached RustSec checkout at `d1fe6ac3eba823a3515e849045f36dc34543885d`, with its lock in a temporary directory. The host reported duplicate dependency versions. Vet used `--locked --frozen` with its default cache. All runs used the default Cargo home.
+- `make integration` stopped at the environment check for `AIPAY_TEST_DATABASE_URL`. The sandbox denied the shared-memory allocation needed to initialize isolated PostgreSQL 17 and 18 instances. The 14 database tests and 13 release-binary tests were skipped. The post-commit event was not exercised against a live database in this run.
+- Two additional offline replay variants per role used the recorded unpaid response. With a 2400-second threshold the query returned pending with no completion code. With the one-second threshold and a mismatched input amount the host returned unknown with `amount_mismatch` and no completion result.
+- `make bench calibrate stress` passed for all six components. In 100 release benchmark iterations, EPay trading's verify_callback measured 119,000 ns at p50 and 329,917 ns at p99. The verification query measured 158,000 ns at p50 and 222,000 ns at p99. Both used 1,179,648 peak guest bytes. The maximum accepted query step used 7,552,678 fuel for trading and 7,551,476 for verification. The highest single step across all packages was 24,152,683 fuel for sim_form_md5. Each component produced 16 concurrent replay reports identical to its serial baseline.

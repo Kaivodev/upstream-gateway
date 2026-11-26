@@ -7,14 +7,15 @@
       "amount": "12345",
       "currency": "CNY"
     },
-    "order_id": "test_20261126064928967995000_query_payment_amount_mismatch"
+    "order_id": "test_1795679305638134000_query_payment_amount_mismatch"
   },
   "config": {
-    "gateway": "http://127.0.0.1:58325",
+    "gateway": "http://127.0.0.1:56652",
     "pid": "1001",
-    "product_name": "Kaivo 测试商品"
+    "product_name": "Kaivo 测试商品",
+    "unpaid_timeout_seconds": "2400"
   },
-  "time": "2026-11-26T06:49:28.967995Z",
+  "time": "2026-11-26T07:48:32.189184Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [
     {
@@ -22,10 +23,10 @@
         "body": "",
         "headers": {},
         "method": "GET",
-        "url": "http://127.0.0.1:58325/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_20261126064928967995000_query_payment_amount_mismatch&pid=1001"
+        "url": "http://127.0.0.1:56652/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_1795679305638134000_query_payment_amount_mismatch&pid=1001"
       },
       "response": {
-        "body": "eyJjb2RlIjoxLCJtc2ciOiJcdTY3ZTVcdThiZTJcdThiYTJcdTUzNTVcdTUzZjdcdTYyMTBcdTUyOWZcdWZmMDEiLCJ0cmFkZV9ubyI6IjIwMjYxMTI2MTQ0OTM1NDQyMzA3Iiwib3V0X3RyYWRlX25vIjoidGVzdF8yMDI2MTEyNjA2NDkyODk2Nzk5NTAwMF9xdWVyeV9wYXltZW50X2Ftb3VudF9taXNtYXRjaCIsImFwaV90cmFkZV9ubyI6IlNJTTIwMjYxMTI2MTQ0OTM1NDQyMzA3IiwidHlwZSI6ImFsaXBheSIsInBpZCI6MTAwMSwiYWRkdGltZSI6IjIwMjYtMTEtMjYgMTQ6NDk6MzUiLCJlbmR0aW1lIjoiMjAyNi0xMS0yNiAxNDo0OTozNSIsIm5hbWUiOiJLYWl2byBcdTZkNGJcdThiZDVcdTU1NDZcdTU0YzEiLCJtb25leSI6IjEyMy40NiIsInN0YXR1cyI6MSwicGFyYW0iOiIiLCJidXllciI6InNpbS1idXllci0xZjY0MTdlMiJ9",
+        "body": "eyJjb2RlIjoxLCJtc2ciOiJcdTY3ZTVcdThiZTJcdThiYTJcdTUzNTVcdTUzZjdcdTYyMTBcdTUyOWZcdWZmMDEiLCJ0cmFkZV9ubyI6IjIwMjYxMTI2MTU0ODMyNTk0NzQzIiwib3V0X3RyYWRlX25vIjoidGVzdF8xNzk1Njc5MzA1NjM4MTM0MDAwX3F1ZXJ5X3BheW1lbnRfYW1vdW50X21pc21hdGNoIiwiYXBpX3RyYWRlX25vIjoiU0lNMjAyNjExMjYxNTQ4MzI1OTQ3NDMiLCJ0eXBlIjoiYWxpcGF5IiwicGlkIjoxMDAxLCJhZGR0aW1lIjoiMjAyNi0xMS0yNiAxNTo0ODozMiIsImVuZHRpbWUiOiIyMDI2LTExLTI2IDE1OjQ4OjMyIiwibmFtZSI6IkthaXZvIFx1NmQ0Ylx1OGJkNVx1NTU0Nlx1NTRjMSIsIm1vbmV5IjoiMTIzLjQ2Iiwic3RhdHVzIjoxLCJwYXJhbSI6IiIsImJ1eWVyIjoic2ltLWJ1eWVyLTlhNjgxOTg0In0=",
         "headers": {
           "cache-control": [
             "no-store"
@@ -34,13 +35,13 @@
             "close"
           ],
           "content-length": [
-            "417"
+            "413"
           ],
           "content-type": [
             "application/json; charset=utf-8"
           ],
           "date": [
-            "Thu, 26 Nov 2026 06:49:35 GMT"
+            "Thu, 26 Nov 2026 07:48:32 GMT"
           ],
           "x-content-type-options": [
             "nosniff"

@@ -1,0 +1,73 @@
+{
+  "name": "query_payment/unpaid_closed",
+  "source": "recorded_upstream_sim_loopback",
+  "operation": "query_payment",
+  "input": {
+    "money": {
+      "amount": "12345",
+      "currency": "CNY"
+    },
+    "order_id": "test_1795679305638134000_query_payment_unpaid_closed"
+  },
+  "config": {
+    "gateway": "http://127.0.0.1:56652",
+    "pid": "1001",
+    "product_name": "Kaivo 测试商品",
+    "unpaid_timeout_seconds": "1"
+  },
+  "time": "2026-11-26T07:48:34.192179Z",
+  "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
+  "exchanges": [
+    {
+      "request": {
+        "body": "",
+        "headers": {},
+        "method": "GET",
+        "url": "http://127.0.0.1:56652/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_1795679305638134000_query_payment_unpaid_closed&pid=1001"
+      },
+      "response": {
+        "body": "eyJjb2RlIjoxLCJtc2ciOiJcdTY3ZTVcdThiZTJcdThiYTJcdTUzNTVcdTUzZjdcdTYyMTBcdTUyOWZcdWZmMDEiLCJ0cmFkZV9ubyI6IjIwMjYxMTI2MTU0ODMyNzY3NTk5Iiwib3V0X3RyYWRlX25vIjoidGVzdF8xNzk1Njc5MzA1NjM4MTM0MDAwX3F1ZXJ5X3BheW1lbnRfdW5wYWlkX2Nsb3NlZCIsImFwaV90cmFkZV9ubyI6bnVsbCwidHlwZSI6ImFsaXBheSIsInBpZCI6MTAwMSwiYWRkdGltZSI6IjIwMjYtMTEtMjYgMTU6NDg6MzIiLCJlbmR0aW1lIjpudWxsLCJuYW1lIjoiS2Fpdm8gXHU2ZDRiXHU4YmQ1XHU1NTQ2XHU1NGMxIiwibW9uZXkiOiIxMjMuNDUiLCJzdGF0dXMiOjAsInBhcmFtIjoiIiwiYnV5ZXIiOm51bGx9",
+        "headers": {
+          "cache-control": [
+            "no-store"
+          ],
+          "connection": [
+            "close"
+          ],
+          "content-length": [
+            "357"
+          ],
+          "content-type": [
+            "application/json; charset=utf-8"
+          ],
+          "date": [
+            "Thu, 26 Nov 2026 07:48:34 GMT"
+          ],
+          "x-content-type-options": [
+            "nosniff"
+          ]
+        },
+        "status": 200
+      }
+    }
+  ],
+  "expected": {
+    "category": "completed",
+    "result": {
+      "code": "timeout_inferred_close",
+      "outcome": "completed",
+      "payment": {
+        "money": {
+          "amount": "12345",
+          "currency": "CNY"
+        },
+        "order_id": "test_1795679305638134000_query_payment_unpaid_closed",
+        "status": "closed",
+        "upstream_id": "20261126154832767599"
+      }
+    },
+    "requests": 1,
+    "responses": 1,
+    "steps": 2
+  }
+}

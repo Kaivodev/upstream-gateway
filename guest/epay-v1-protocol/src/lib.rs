@@ -16,21 +16,34 @@ pub use query::query_payment;
 struct Endpoint {
     gateway: String,
     pid: String,
+    unpaid_timeout_seconds: i64,
 }
 
 impl Endpoint {
-    fn new(gateway: String, pid: String) -> Option<Self> {
+    fn new(gateway: String, pid: String, unpaid_timeout_seconds: &str) -> Option<Self> {
         if !base_url(&gateway) || !digits(&pid) || pid.starts_with('0') {
+            return None;
+        }
+        if !digits(unpaid_timeout_seconds) || unpaid_timeout_seconds.starts_with('0') {
+            return None;
+        }
+        let unpaid_timeout_seconds = unpaid_timeout_seconds.parse().ok()?;
+        if !(1..=2_592_000).contains(&unpaid_timeout_seconds) {
             return None;
         }
         Some(Self {
             gateway: gateway.trim_end_matches('/').into(),
             pid,
+            unpaid_timeout_seconds,
         })
     }
 
     fn configured() -> Option<Self> {
-        Self::new(host::config("gateway"), host::config("pid"))
+        Self::new(
+            host::config("gateway"),
+            host::config("pid"),
+            &host::config("unpaid_timeout_seconds"),
+        )
     }
 }
 

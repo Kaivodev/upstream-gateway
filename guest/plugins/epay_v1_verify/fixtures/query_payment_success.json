@@ -7,13 +7,14 @@
       "amount": "12345",
       "currency": "CNY"
     },
-    "order_id": "test_20261126064942584721000_query_payment_success"
+    "order_id": "test_1795679326167144000_query_payment_success"
   },
   "config": {
-    "gateway": "http://127.0.0.1:58325",
-    "pid": "1001"
+    "gateway": "http://127.0.0.1:56652",
+    "pid": "1001",
+    "unpaid_timeout_seconds": "2400"
   },
-  "time": "2026-11-26T06:49:42.584721Z",
+  "time": "2026-11-26T07:48:50.048816Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [
     {
@@ -21,10 +22,10 @@
         "body": "",
         "headers": {},
         "method": "GET",
-        "url": "http://127.0.0.1:58325/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_20261126064942584721000_query_payment_success&pid=1001"
+        "url": "http://127.0.0.1:56652/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_1795679326167144000_query_payment_success&pid=1001"
       },
       "response": {
-        "body": "eyJjb2RlIjoxLCJtc2ciOiJcdTY3ZTVcdThiZTJcdThiYTJcdTUzNTVcdTUzZjdcdTYyMTBcdTUyOWZcdWZmMDEiLCJ0cmFkZV9ubyI6IjIwMjYxMTI2MTQ0OTQzMDgwMzkzIiwib3V0X3RyYWRlX25vIjoidGVzdF8yMDI2MTEyNjA2NDk0MjU4NDcyMTAwMF9xdWVyeV9wYXltZW50X3N1Y2Nlc3MiLCJhcGlfdHJhZGVfbm8iOiJTSU0yMDI2MTEyNjE0NDk0MzA4MDM5MyIsInR5cGUiOiJhbGlwYXkiLCJwaWQiOjEwMDEsImFkZHRpbWUiOiIyMDI2LTExLTI2IDE0OjQ5OjQzIiwiZW5kdGltZSI6IjIwMjYtMTEtMjYgMTQ6NDk6NDMiLCJuYW1lIjoiS2Fpdm8gXHU2ZDRiXHU4YmQ1XHU1NTQ2XHU1NGMxIiwibW9uZXkiOiIxMjMuNDUiLCJzdGF0dXMiOjEsInBhcmFtIjoiIiwiYnV5ZXIiOiJzaW0tYnV5ZXItZjMwNDc4YTIifQ==",
+        "body": "eyJjb2RlIjoxLCJtc2ciOiJcdTY3ZTVcdThiZTJcdThiYTJcdTUzNTVcdTUzZjdcdTYyMTBcdTUyOWZcdWZmMDEiLCJ0cmFkZV9ubyI6IjIwMjYxMTI2MTU0ODUwNDE0ODU1Iiwib3V0X3RyYWRlX25vIjoidGVzdF8xNzk1Njc5MzI2MTY3MTQ0MDAwX3F1ZXJ5X3BheW1lbnRfc3VjY2VzcyIsImFwaV90cmFkZV9ubyI6IlNJTTIwMjYxMTI2MTU0ODUwNDE0ODU1IiwidHlwZSI6ImFsaXBheSIsInBpZCI6MTAwMSwiYWRkdGltZSI6IjIwMjYtMTEtMjYgMTU6NDg6NTAiLCJlbmR0aW1lIjoiMjAyNi0xMS0yNiAxNTo0ODo1MCIsIm5hbWUiOiJLYWl2byBcdTZkNGJcdThiZDVcdTU1NDZcdTU0YzEiLCJtb25leSI6IjEyMy40NSIsInN0YXR1cyI6MSwicGFyYW0iOiIiLCJidXllciI6InNpbS1idXllci1lODlkNWJiOCJ9",
         "headers": {
           "cache-control": [
             "no-store"
@@ -33,13 +34,13 @@
             "close"
           ],
           "content-length": [
-            "409"
+            "405"
           ],
           "content-type": [
             "application/json; charset=utf-8"
           ],
           "date": [
-            "Thu, 26 Nov 2026 06:49:43 GMT"
+            "Thu, 26 Nov 2026 07:48:50 GMT"
           ],
           "x-content-type-options": [
             "nosniff"
@@ -58,10 +59,10 @@
           "amount": "12345",
           "currency": "CNY"
         },
-        "order_id": "test_20261126064942584721000_query_payment_success",
-        "paid_at": "2026-11-26T06:49:43Z",
+        "order_id": "test_1795679326167144000_query_payment_success",
+        "paid_at": "2026-11-26T07:48:50Z",
         "status": "paid",
-        "upstream_id": "20261126144943080393"
+        "upstream_id": "20261126154850414855"
       }
     },
     "requests": 1,

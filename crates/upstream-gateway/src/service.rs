@@ -43,6 +43,9 @@ impl Mode {
 pub trait Events: Send + Sync {
     fn alert(&self, code: &'static str);
     fn log(&self, event: &serde_json::Value);
+    fn completion(&self, code: &'static str) {
+        self.log(&serde_json::json!({"event": "gateway_completion", "code": code}));
+    }
 }
 #[derive(Clone)]
 pub struct Gateway(pub(crate) Arc<Inner>);
@@ -59,7 +62,7 @@ pub(crate) struct Inner {
     pub cache: RwLock<HashMap<Vec<u8>, Arc<Loaded>>>,
     pub executor: String,
     transport: Arc<dyn Transport>,
-    events: Arc<dyn Events>,
+    pub events: Arc<dyn Events>,
     #[cfg(test)]
     pub unconfirm: std::sync::atomic::AtomicBool,
 }

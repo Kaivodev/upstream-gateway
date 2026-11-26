@@ -188,6 +188,9 @@ impl Events for Observer {
         eprintln!("gateway event {code}");
     }
     fn log(&self, _: &serde_json::Value) {}
+    fn completion(&self, code: &'static str) {
+        eprintln!("gateway completion {code}");
+    }
 }
 pub async fn run(path: &Path) -> Result<()> {
     let (config, mode) = Config::read(path)?;

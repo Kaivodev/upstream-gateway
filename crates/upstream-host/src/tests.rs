@@ -211,6 +211,29 @@ fn entropy_and_fixtures() {
     assert!(Fixture::decode(&json::canonical(&bad)).is_err());
 }
 #[test]
+fn unpaid_closed_is_optional_and_requires_query_closure_evidence() {
+    let fixture =
+        include_bytes!("../../../guest/plugins/epay_v1/fixtures/query_payment_unpaid_closed.json");
+    assert!(Fixture::decode(fixture).is_ok());
+    assert!(!super::replay::required_scenarios("query_payment").contains(&"unpaid_closed"));
+    let original = json::object(fixture).unwrap();
+    for (path, value) in [
+        ("/expected/category", json!("unknown")),
+        ("/expected/result/code", json!("")),
+        ("/expected/result/payment/status", json!("pending")),
+        ("/expected/responses", json!(0)),
+    ] {
+        let mut bad = original.clone();
+        *bad.pointer_mut(path).unwrap() = value;
+        assert!(Fixture::decode(&json::canonical(&bad)).is_err(), "{path}");
+    }
+    let mut bad = original;
+    bad["operation"] = json!("close_payment");
+    bad["name"] = json!("close_payment/unpaid_closed");
+    assert!(Fixture::decode(&json::canonical(&bad)).is_err());
+}
+
+#[test]
 fn exact_component_surface() {
     let h = Host::new(Options::replay("payment")).unwrap();
     let mut p = Package {

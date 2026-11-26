@@ -3,8 +3,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 fn config() -> Config {
     Config::new(
-        "https://example.test/shop///".into(),
-        "42".into(),
+        Endpoint::new("https://example.test/shop///".into(), "42".into(), "2400").unwrap(),
         "Tea 茶".into(),
     )
     .unwrap()
@@ -61,7 +60,9 @@ fn assert_unknown(step: Step, expected: &str) {
 
 #[test]
 fn config_requires_a_base_url_decimal_pid_and_bounded_product_bytes() {
-    let check = |url: &str, pid: &str, name: &str| Config::new(url.into(), pid.into(), name.into());
+    let check = |url: &str, pid: &str, name: &str| {
+        Config::new(Endpoint::new(url.into(), pid.into(), "2400")?, name.into())
+    };
     assert_eq!(config().endpoint.gateway, "https://example.test/shop");
     for url in [
         "http://127.0.0.1:8080/",

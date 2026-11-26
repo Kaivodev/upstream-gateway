@@ -9,6 +9,33 @@ use upstream_host::package::hex;
 use upstream_host::types::HttpRequest;
 
 #[test]
+fn inferred_close_code_survives_projection_and_selects_a_distinct_event() {
+    let query = "/aipay.upstream.v1.UpstreamService/QueryPayment";
+    let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../guest/plugins/epay_v1_verify/fixtures/query_payment_unpaid_closed.json"
+    ))
+    .unwrap();
+    let expected = &fixture["expected"];
+    let project = |v| business::Outcome::from_host(serde_json::from_value(v).unwrap()).unwrap();
+    let out = project(expected.clone());
+    assert_eq!(
+        out.result.upstream_code.as_deref(),
+        Some("timeout_inferred_close")
+    );
+    assert_eq!(out.completion_event(query), Some("timeout_inferred_close"));
+    assert_eq!(
+        out.completion_event("/aipay.upstream.v1.UpstreamService/ClosePayment"),
+        None
+    );
+    let mut paid = expected.clone();
+    paid["result"]["payment"]["status"] = "paid".into();
+    assert_eq!(project(paid).completion_event(query), None);
+    let mut ordinary = expected.clone();
+    ordinary["result"].as_object_mut().unwrap().remove("code");
+    assert_eq!(project(ordinary).completion_event(query), None);
+}
+
+#[test]
 fn credential_interoperability_vector() {
     let c = crypto::credentials(br#"{"b":"line\n", "a":"x<&"}"#).unwrap();
     assert_eq!(c.canonical.as_slice(), br#"{"a":"x<&","b":"line\u000a"}"#);

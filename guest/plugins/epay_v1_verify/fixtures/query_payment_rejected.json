@@ -7,13 +7,14 @@
       "amount": "12345",
       "currency": "CNY"
     },
-    "order_id": "test_20261126064942584721000_query_payment_rejected"
+    "order_id": "test_1795679326167144000_query_payment_rejected"
   },
   "config": {
-    "gateway": "http://127.0.0.1:58325",
-    "pid": "1001"
+    "gateway": "http://127.0.0.1:56652",
+    "pid": "1001",
+    "unpaid_timeout_seconds": "2400"
   },
-  "time": "2026-11-26T06:49:42.584721Z",
+  "time": "2026-11-26T07:48:50.05536Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [
     {
@@ -21,7 +22,7 @@
         "body": "",
         "headers": {},
         "method": "GET",
-        "url": "http://127.0.0.1:58325/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_20261126064942584721000_query_payment_rejected&pid=1001"
+        "url": "http://127.0.0.1:56652/api.php?act=order&key=%7B%7Bsecret%3Amerchant_key%7D%7D&out_trade_no=test_1795679326167144000_query_payment_rejected&pid=1001"
       },
       "response": {
         "body": "eyJjb2RlIjotMSwibXNnIjoiXHU4YmEyXHU1MzU1XHU1M2Y3XHU0ZTBkXHU1YjU4XHU1NzI4In0=",
@@ -39,7 +40,7 @@
             "application/json; charset=utf-8"
           ],
           "date": [
-            "Thu, 26 Nov 2026 06:49:43 GMT"
+            "Thu, 26 Nov 2026 07:48:50 GMT"
           ],
           "x-content-type-options": [
             "nosniff"

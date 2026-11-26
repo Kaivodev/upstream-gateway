@@ -6,14 +6,15 @@
     "body": "",
     "headers": {},
     "method": "GET",
-    "raw_query": "cGlkPTEwMDEmdHJhZGVfbm89MjAyNjExMjYxNDQ5MzUwODk5MTUmb3V0X3RyYWRlX25vPXRlc3RfMjAyNjExMjYwNjQ5Mjg5Njc5OTUwMDBfcm91dGVfY2FsbGJhY2tfc3VjY2VzcyZ0eXBlPWFsaXBheSZuYW1lPUthaXZvKyVFNiVCNSU4QiVFOCVBRiU5NSVFNSU5NSU4NiVFNSU5MyU4MSZtb25leT0xMjMuNDUmdHJhZGVfc3RhdHVzPVRSQURFX1NVQ0NFU1MmcGFyYW09JnNpZ249VEVTVF9TSUdOQVRVUkVfUkVHRU5FUkFURURfQVRfUkVQTEFZJnNpZ25fdHlwZT1NRDU="
+    "raw_query": "cGlkPTEwMDEmdHJhZGVfbm89MjAyNjExMjYxNTQ4MzQ2ODAwMzkmb3V0X3RyYWRlX25vPXRlc3RfMTc5NTY3OTMwNTYzODEzNDAwMF9yb3V0ZV9jYWxsYmFja19zdWNjZXNzJnR5cGU9YWxpcGF5Jm5hbWU9S2Fpdm8rJUU2JUI1JThCJUU4JUFGJTk1JUU1JTk1JTg2JUU1JTkzJTgxJm1vbmV5PTEyMy40NSZ0cmFkZV9zdGF0dXM9VFJBREVfU1VDQ0VTUyZwYXJhbT0mc2lnbj1URVNUX1NJR05BVFVSRV9SRUdFTkVSQVRFRF9BVF9SRVBMQVkmc2lnbl90eXBlPU1ENQ=="
   },
   "config": {
-    "gateway": "http://127.0.0.1:58325",
+    "gateway": "http://127.0.0.1:56652",
     "pid": "1001",
-    "product_name": "Kaivo 测试商品"
+    "product_name": "Kaivo 测试商品",
+    "unpaid_timeout_seconds": "2400"
   },
-  "time": "2026-11-26T06:49:28.967995Z",
+  "time": "2026-11-26T07:48:34.198387Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [],
   "expected": {
@@ -21,7 +22,7 @@
     "result": {
       "outcome": "completed",
       "route": {
-        "order_id": "test_20261126064928967995000_route_callback_success"
+        "order_id": "test_1795679305638134000_route_callback_success"
       }
     },
     "requests": 0,

@@ -180,6 +180,16 @@ impl Fixture {
         ensure!(
             match scenario {
                 "success" => e.category == "completed" && e.result.is_some(),
+                // Timeout inference is an optional query policy that many upstreams do not implement.
+                "unpaid_closed" =>
+                    f.operation == "query_payment"
+                        && e.category == "completed"
+                        && e.responses > 0
+                        && e.result
+                            .as_ref()
+                            .is_some_and(|r| r["payment"]["status"] == "closed"
+                                && r["code"] == "timeout_inferred_close"
+                                && r["payment"].get("paid_at").is_none()),
                 "malformed" => f.operation == "route_callback" && e.category == "not_sent",
                 "signature_error" if f.operation == "verify_callback" => e.category == "not_sent",
                 "rejected" | "signature_error" =>

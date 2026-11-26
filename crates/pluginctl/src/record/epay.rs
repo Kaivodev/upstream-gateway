@@ -10,7 +10,8 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use upstream_host::{
     engine::{Host, Options},
@@ -64,13 +65,13 @@ impl Account {
             key: Zeroizing::new(key.as_bytes().to_vec()),
         })
     }
-    pub fn pay(
+    fn create(
         &self,
         sim: &Simulator,
         notify: &str,
         order: &str,
         protected: &mut Scanner,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let mut fields = BTreeMap::from([
             ("pid", self.pid.as_str()),
             ("type", "alipay"),
@@ -103,8 +104,19 @@ impl Account {
                 .as_str()
                 .context("missing simulator pay URL")?,
         )?;
+        Ok(path.to_owned())
+    }
+
+    fn pay(
+        &self,
+        sim: &Simulator,
+        notify: &str,
+        order: &str,
+        protected: &mut Scanner,
+    ) -> Result<()> {
+        let path = self.create(sim, notify, order, protected)?;
         ensure!(
-            sim.request("POST", path, None, Some(FORM), &[])?.status == 200,
+            sim.request("POST", &path, None, Some(FORM), &[])?.status == 200,
             "simulator payment failed"
         );
         Ok(())
@@ -215,6 +227,14 @@ fn check_exchange(
     );
     let result = execution.result.as_ref().unwrap_or(&Value::Null);
     let ok = match scenario {
+        "unpaid_closed" => {
+            operation == "query_payment"
+                && execution.category == "completed"
+                && execution.responses == 1
+                && result["payment"]["status"] == "closed"
+                && result["payment"].get("paid_at").is_none()
+                && result["code"] == "timeout_inferred_close"
+        }
         "success" if operation == "query_payment" => {
             execution.category == "completed"
                 && result["payment"]["status"] == "paid"
@@ -272,14 +292,7 @@ pub(super) fn record(
                 .any(|declared| declared == op)),
         "unsupported recording capabilities"
     );
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-    let timestamp = (now.as_secs().try_into()?, now.subsec_nanos());
-    let time = time::format(timestamp).context("invalid recording time")?;
-    let stamp = format!(
-        "{}{:09}",
-        time[..19].replace(['-', 'T', ':'], ""),
-        timestamp.1
-    );
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let account = Arc::new(Account::fetch(sim, token)?);
     protected.lock().unwrap().add(&account.key);
     let mut config = BTreeMap::from([
@@ -293,7 +306,18 @@ pub(super) fn record(
     let loaded = host.load(p)?;
     let listener = Listener::start()?;
     for &operation in operations {
-        for &scenario in upstream_host::replay::required_scenarios(operation) {
+        let optional = (operation == "query_payment").then_some("unpaid_closed");
+        for scenario in upstream_host::replay::required_scenarios(operation)
+            .iter()
+            .copied()
+            .chain(optional)
+        {
+            let timeout = if scenario == "unpaid_closed" {
+                "1"
+            } else {
+                "2400"
+            };
+            config.insert("unpaid_timeout_seconds".into(), timeout.into());
             let order = format!("test_{stamp}_{operation}_{scenario}");
             let (mut input, callback) = if operation == "create_payment" {
                 let settings = match scenario {
@@ -311,7 +335,17 @@ pub(super) fn record(
             } else if operation == "query_payment" {
                 if scenario != "rejected" {
                     set_scenario(sim, token, &order, &json!({"callback_disabled":true}))?;
-                    account.pay(sim, &listener.url, &order, &mut protected.lock().unwrap())?;
+                    if scenario == "unpaid_closed" {
+                        account.create(
+                            sim,
+                            &listener.url,
+                            &order,
+                            &mut protected.lock().unwrap(),
+                        )?;
+                        thread::sleep(Duration::from_secs(2));
+                    } else {
+                        account.pay(sim, &listener.url, &order, &mut protected.lock().unwrap())?;
+                    }
                 }
                 let settings = match scenario {
                     "timeout" => json!({"api_fault":"timeout","fault_delay_ms":3000}),
@@ -341,6 +375,9 @@ pub(super) fn record(
                 )?;
                 (case.input.clone(), Some(case))
             };
+            let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+            let timestamp = (now.as_secs().try_into()?, now.subsec_nanos());
+            let time = time::format(timestamp).context("invalid recording time")?;
             let env = Arc::new(CaptureEnv {
                 transport: callback.is_none().then(|| CaptureTransport {
                     sim: *sim,

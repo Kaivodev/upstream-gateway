@@ -7,8 +7,7 @@ struct Config {
 }
 
 impl Config {
-    fn new(gateway: String, pid: String, product_name: String) -> Option<Self> {
-        let endpoint = Endpoint::new(gateway, pid)?;
+    fn new(endpoint: Endpoint, product_name: String) -> Option<Self> {
         (1..=127).contains(&product_name.len()).then_some(Self {
             endpoint,
             product_name,
@@ -17,11 +16,9 @@ impl Config {
 }
 
 fn configured(operation: impl FnOnce(&Config) -> Step) -> Step {
-    let Some(config) = Config::new(
-        host::config("gateway"),
-        host::config("pid"),
-        host::config("product_name"),
-    ) else {
+    let Some(config) = Endpoint::configured()
+        .and_then(|endpoint| Config::new(endpoint, host::config("product_name")))
+    else {
         return error("config");
     };
     operation(&config)

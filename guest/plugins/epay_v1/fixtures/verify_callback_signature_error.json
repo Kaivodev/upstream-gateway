@@ -10,15 +10,16 @@
       "amount": "12345",
       "currency": "CNY"
     },
-    "order_id": "test_20261126064928967995000_verify_callback_signature_error",
-    "raw_query": "cGlkPTEwMDEmdHJhZGVfbm89MjAyNjExMjYxNDQ5MzUwMjk3NDMmb3V0X3RyYWRlX25vPXRlc3RfMjAyNjExMjYwNjQ5Mjg5Njc5OTUwMDBfdmVyaWZ5X2NhbGxiYWNrX3NpZ25hdHVyZV9lcnJvciZ0eXBlPWFsaXBheSZuYW1lPUthaXZvKyVFNiVCNSU4QiVFOCVBRiU5NSVFNSU5NSU4NiVFNSU5MyU4MSZtb25leT0xMjMuNDUmdHJhZGVfc3RhdHVzPVRSQURFX1NVQ0NFU1MmcGFyYW09JnNpZ249MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAmc2lnbl90eXBlPU1ENQ=="
+    "order_id": "test_1795679305638134000_verify_callback_signature_error",
+    "raw_query": "cGlkPTEwMDEmdHJhZGVfbm89MjAyNjExMjYxNTQ4MzQ3NjEzMzcmb3V0X3RyYWRlX25vPXRlc3RfMTc5NTY3OTMwNTYzODEzNDAwMF92ZXJpZnlfY2FsbGJhY2tfc2lnbmF0dXJlX2Vycm9yJnR5cGU9YWxpcGF5Jm5hbWU9S2Fpdm8rJUU2JUI1JThCJUU4JUFGJTk1JUU1JTk1JTg2JUU1JTkzJTgxJm1vbmV5PTEyMy40NSZ0cmFkZV9zdGF0dXM9VFJBREVfU1VDQ0VTUyZwYXJhbT0mc2lnbj0wMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCZzaWduX3R5cGU9TUQ1"
   },
   "config": {
-    "gateway": "http://127.0.0.1:58325",
+    "gateway": "http://127.0.0.1:56652",
     "pid": "1001",
-    "product_name": "Kaivo 测试商品"
+    "product_name": "Kaivo 测试商品",
+    "unpaid_timeout_seconds": "2400"
   },
-  "time": "2026-11-26T06:49:28.967995Z",
+  "time": "2026-11-26T07:48:34.216683Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [],
   "expected": {
