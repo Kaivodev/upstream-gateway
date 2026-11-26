@@ -143,7 +143,10 @@ fn mapi_response(input: CreatePaymentInput, response: &HttpResponse) -> Step {
         response.status,
         &response.body,
         &["trade_no", "payurl", "qrcode", "urlscheme"],
-        |fields| mapi_payment(input, fields),
+        |code, fields| match code {
+            1 => mapi_payment(input, fields),
+            _ => provider_rejection(code),
+        },
     )
 }
 

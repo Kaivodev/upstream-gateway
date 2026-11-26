@@ -54,7 +54,7 @@
   "expected": {
     "category": "rejected",
     "result": {
-      "code": "epay_code_-1",
+      "code": "not_found",
       "outcome": "rejected"
     },
     "requests": 1,

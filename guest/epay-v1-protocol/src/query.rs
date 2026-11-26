@@ -39,6 +39,7 @@ fn query(
                 r.status,
                 r.body.trim_ascii(),
                 &[
+                    "msg",
                     "trade_no",
                     "out_trade_no",
                     "pid",
@@ -47,7 +48,13 @@ fn query(
                     "addtime",
                     "endtime",
                 ],
-                |fields| order_response(fields, order, &endpoint, now),
+                |code, fields| match code {
+                    1 => order_response(fields, order, &endpoint, now),
+                    -1 if string_field(fields, "msg").as_deref() == Some("订单号不存在") => {
+                        rejected("not_found".into())
+                    }
+                    _ => provider_rejection(code),
+                },
             )
         }
         _ => error("response_count"),

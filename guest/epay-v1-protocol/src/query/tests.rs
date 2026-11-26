@@ -212,6 +212,68 @@ fn provider_rejection_precedes_order_fields() {
 }
 
 #[test]
+fn query_recognizes_the_exact_decoded_order_not_found_message() {
+    for body in [
+        r#"{"code":-1,"msg":"\u8ba2\u5355\u53f7\u4e0d\u5b58\u5728"}"#,
+        r#"{"code":-1,"msg":"订单号不存在"}"#,
+        r#"{"msg":"订单号不存在","code":"-1"}"#,
+        "\u{feff} \n{\"code\":-1,\"msg\":\"订单号不存在\"}\r\n",
+    ] {
+        let step = response(200, body.as_bytes());
+        assert!(
+            matches!(&step, Step::Result(OperationResult::Rejected(code)) if code == "not_found"),
+            "{body}: {step:?}"
+        );
+    }
+}
+
+#[test]
+fn query_keeps_the_provider_code_for_other_or_ambiguous_messages() {
+    for (body, expected) in [
+        (r#"{"code":-1,"msg":"订单号不能为空"}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":"商户密钥错误"}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":""}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":" 订单号不存在"}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":"订单号不存在 "}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":"订单号不存在!"}"#, "epay_code_-1"),
+        (r#"{"code":-1}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":null}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":7}"#, "epay_code_-1"),
+        (r#"{"code":-1,"msg":{}}"#, "epay_code_-1"),
+        (
+            r#"{"code":-1,"msg":null,"msg":"订单号不存在"}"#,
+            "epay_code_-1",
+        ),
+        (
+            r#"{"code":-1,"msg":"订单号不存在","msg":null}"#,
+            "epay_code_-1",
+        ),
+        (
+            r#"{"code":-1,"msg":"订单号不存在","m\u0073g":"订单号不存在"}"#,
+            "epay_code_-1",
+        ),
+        (
+            r#"{"code":-1,"msg":7,"msg":null,"msg":"订单号不存在"}"#,
+            "epay_code_-1",
+        ),
+        (r#"{"code":-2,"msg":"订单号不存在"}"#, "epay_code_-2"),
+    ] {
+        let step = response(200, body.as_bytes());
+        assert!(
+            matches!(&step, Step::Result(OperationResult::Rejected(code)) if code == expected),
+            "{body}: {step:?}"
+        );
+    }
+}
+
+#[test]
+fn query_requires_http_200_and_valid_json_for_not_found() {
+    let body = r#"{"code":-1,"msg":"订单号不存在"}"#.as_bytes();
+    assert_unknown(response(500, body), "http_status");
+    assert_unknown(response(200, &body[..body.len() - 1]), "response_json");
+}
+
+#[test]
 fn successful_envelope_requires_matching_identity_valid_money_status_and_time() {
     for (k, bad, code) in [
         ("trade_no", json!(""), "response_identity"),

@@ -245,6 +245,9 @@ fn check_exchange(
                 && result["payment"]["status"] == "pending"
                 && result["payment"]["url"].is_string()
         }
+        "rejected" if operation == "query_payment" => {
+            execution.category == "rejected" && result["code"] == "not_found"
+        }
         "rejected" | "signature_error" => {
             execution.category == "rejected" && result["code"] == "epay_code_-1"
         }

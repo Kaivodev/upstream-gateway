@@ -154,6 +154,12 @@ fn response_fields<'a>(mut body: &'a [u8], names: &[&str]) -> Option<Fields<'a>>
         // Skip unknown values without imposing numeric or nesting limits on their contents.
         let (_, token) = json_token::<IgnoredAny>(&mut body)?;
         if key == "code" || names.contains(&key.as_str()) {
+            // A repeated message is ambiguous, even when its values agree.
+            let token = if key == "msg" && fields.contains_key(&key) {
+                b"null"
+            } else {
+                token
+            };
             fields.insert(key, token);
         }
         if body == b"}" {
@@ -178,7 +184,7 @@ fn api_response(
     status: u16,
     body: &[u8],
     names: &[&str],
-    success: impl FnOnce(&Fields<'_>) -> Step,
+    classify: impl FnOnce(i64, &Fields<'_>) -> Step,
 ) -> Step {
     if status != 200 {
         return unknown(Some("http_status".into()));
@@ -193,10 +199,11 @@ fn api_response(
     let Some(code) = fields.get("code").and_then(|v| response_code(v)) else {
         return unknown(Some("response_json".into()));
     };
-    if code != 1 {
-        return rejected(format!("epay_code_{code}"));
-    }
-    success(&fields)
+    classify(code, &fields)
+}
+
+fn provider_rejection(code: i64) -> Step {
+    rejected(format!("epay_code_{code}"))
 }
 
 fn string_field(fields: &Fields<'_>, name: &str) -> Option<String> {

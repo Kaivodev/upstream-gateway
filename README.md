@@ -12,7 +12,7 @@ Use `target/debug/pluginctl verify --dir PACKAGE --repo CHECKOUT` to verify a co
 
 ## Gateway service
 
-Run one gateway instance per role. Give each instance its own database or PostgreSQL schema, KEK, service identity and outbound network policy. The gateway returns protocol facts, dispatch counts and encrypted exchange evidence. Payment and reconciliation own approval, settlement and order state.
+Run one gateway instance per role. Give each instance its own database or PostgreSQL schema, KEK, service identity and outbound network policy. The gateway returns protocol facts, dispatch counts and encrypted exchange evidence. On QueryPayment, a REJECTED result with upstream code `not_found` means the upstream explicitly reported that the order does not exist. Payment and reconciliation own approval, settlement and order state.
 
 | Role | Service name | Sole client | Business RPCs | Package world |
 | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ Database TLS requires a single TCP host and uses TLS 1.2 or 1.3. With a CA file,
 Build from the repository root with BuildKit.
 
 ```sh
-docker build -t upstream-gateway:0.6.0 .
+docker build -t upstream-gateway:0.7.0 .
 ```
 
 The builder installs wasm-tools 1.263.0, fetches the locked host dependencies, and compiles the release binary with network access disabled. The shared deploy workflow may supply the `COMMIT` build argument and the optional `aipay_modules_token` secret. Neither is used.

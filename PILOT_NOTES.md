@@ -560,3 +560,22 @@ The gateway opens the connection with the request template before authorizing an
 - Default deny and vet stopped on read-only cache locks. Frozen checks passed advisories, bans, licenses and sources in both workspaces using the cached RustSec snapshot `c9f6c91a44dbad9d71742329e9df061279f9c4be` and a writable lock directory. Vet reported 12 fully audited guest packages.
 - `make bench calibrate stress` passed for all six plugins. Across 100 release iterations per plugin, operation p50 ranged from 74,625 to 1,347,042 ns and p99 from 109,750 to 1,520,625 ns. Peak guest memory was 1,179,648 bytes for every plugin. The largest calibrated step used 24,152,683 fuel. Each plugin produced 16 reports identical to its serial baseline with four workers and four rounds.
 - `make integration` against a disposable local PostgreSQL 18 passed 15 database-backed service tests and 15 real-binary edge tests. They include CreatePayment and QueryPayment open failures sealed as NOT_SENT with zero attempts and idempotent replay, a refused port classified NOT_SENT and a peer closing after the request classified UNKNOWN, and both SIGKILL cases.
+
+## v0.7.0 (A144 ②) EPay V1 order not found
+
+Both EPay plugins returned `rejected("not_found")` for the recorded missing-order query. Each fixture differed from HEAD only in its expected code. Both invalid-key recordings and the synthetic create response with the same missing-order message retained `epay_code_-1`.
+
+- `make bindings` and `git diff --exit-code -- guest/sdk/src` passed on aarch64-apple-darwin with Rust 1.99.1.
+- `make check` passed. The EPay protocol ran 29 trade tests and 12 verification tests. They covered raw and escaped messages, string codes, BOM and whitespace, ambiguous messages, non-200 status and malformed JSON. The gateway fixture test verified the fixed event label and its method, category and code conditions.
+- `make plugins replay repro` passed all 101 cases and reproduced all six packages byte for byte across two build paths.
+- Compared with an archive of HEAD `341f2a8`, the four simulator components, four source manifests and 80 fixtures matched byte for byte. With both builds marked `uncommitted`, each packaged simulator manifest differed only in `build.source_tree_sha256`. The source closure hashes the entire guest lockfile, including the three updated EPay versions.
+- Default deny and vet encountered read-only cache locks. Frozen deny passed advisories, bans, licenses and sources for both workspaces with their existing policies, a temporary advisory lock directory and RustSec snapshot `c9f6c91a44dbad9d71742329e9df061279f9c4be`. The host reported duplicate-version warnings. Guest vet passed with `--locked --frozen` and 12 fully audited packages.
+- `make bench calibrate stress` passed for all six plugins. Across 100 iterations, EPay trade callback and verification query p99 were 145,500 ns and 249,292 ns respectively. Both peaked at 1,179,648 bytes. Their maximum calibrated steps used 12,622,328 and 7,553,889 fuel. All six plugins produced 16 reports identical to their serial replay.
+- The separate PostgreSQL integration target was outside this run. The standard suite skipped its 15 database-backed service tests and 15 real-process edge tests.
+
+The following SHA-256 digests identify the local packages with `uncommitted` build provenance.
+
+| Plugin | Package | Component | Fixture set |
+| --- | --- | --- | --- |
+| epay_v1 0.4.0 | `565aa4489e943df602cb736d0668f1250177aa27d89e6b964168c872d67c840d` | `d57a4bdded2fe2d00a4fc19962c8bfa4f7c2d4e779da2b39b658c6b59ec3ea3f` | `d89cfbe559ff030c4f0f7186074378470eab79fe6b924d0675fa598d1d66ee0d` |
+| epay_v1_verify 0.3.0 | `ccb6095344226d4dd812acecdc212855ff5d8a5f603fa75246edef75f22d0032` | `a8a42bfd1ba7d894411808b434af51b969ce448bc425d6efe5862f1537731db5` | `1c0d9669ff7025629d37be02117f98003c4664c831134a1bc749628b0302d4ba` |

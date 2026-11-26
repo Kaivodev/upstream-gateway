@@ -330,6 +330,15 @@ fn response_keeps_missing_or_ambiguous_payment_details_unknown() {
 }
 
 #[test]
+fn create_keeps_the_provider_code_for_an_order_not_found_message() {
+    let body = r#"{"code":-1,"msg":"订单号不存在"}"#.as_bytes();
+    let step = create(input(), vec![response(200, body)]);
+    assert!(
+        matches!(step, Step::Result(OperationResult::Rejected(code)) if code == "epay_code_-1")
+    );
+}
+
+#[test]
 fn response_separates_transport_json_and_provider_errors() {
     assert_unknown(
         create(input(), vec![response(503, br#"{"code":-1}"#)]),

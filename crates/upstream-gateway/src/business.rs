@@ -224,15 +224,19 @@ pub(crate) struct Outcome {
 impl Outcome {
     // Only fixed completion codes may become log or metric labels.
     pub fn completion_event(&self, method: &str) -> Option<&'static str> {
-        const CODE: &str = "timeout_inferred_close";
-        if self.result.upstream_code.as_deref() != Some(CODE)
-            || self.result.category() != ExecutionCategory::Succeeded
-            || method != "/aipay.upstream.v1.UpstreamService/QueryPayment"
-        {
+        const INFERRED_CLOSE: &str = "timeout_inferred_close";
+        const NOT_FOUND: &str = "not_found";
+        if method != "/aipay.upstream.v1.UpstreamService/QueryPayment" {
             return None;
         }
-        let payment = PaymentOutput::decode(self.output.as_deref()?).ok()?;
-        (payment.status() == PaymentStatus::Closed).then_some(CODE)
+        match (self.result.category(), self.result.upstream_code.as_deref()) {
+            (ExecutionCategory::Rejected, Some(NOT_FOUND)) => Some(NOT_FOUND),
+            (ExecutionCategory::Succeeded, Some(INFERRED_CLOSE)) => {
+                let payment = PaymentOutput::decode(self.output.as_deref()?).ok()?;
+                (payment.status() == PaymentStatus::Closed).then_some(INFERRED_CLOSE)
+            }
+            _ => None,
+        }
     }
 
     pub fn failure(code: &str) -> Self {

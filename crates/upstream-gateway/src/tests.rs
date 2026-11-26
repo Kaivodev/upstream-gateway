@@ -36,6 +36,29 @@ fn inferred_close_code_survives_projection_and_selects_a_distinct_event() {
 }
 
 #[test]
+fn not_found_event_requires_a_rejected_payment_query() {
+    let query = "/aipay.upstream.v1.UpstreamService/QueryPayment";
+    let fixture: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../guest/plugins/epay_v1_verify/fixtures/query_payment_rejected.json"
+    ))
+    .unwrap();
+    let mut out =
+        business::Outcome::from_host(serde_json::from_value(fixture["expected"].clone()).unwrap())
+            .unwrap();
+    assert_eq!(out.result.upstream_code.as_deref(), Some("not_found"));
+    assert_eq!(out.completion_event(query), Some("not_found"));
+    assert_eq!(
+        out.completion_event("/aipay.upstream.v1.UpstreamService/CreatePayment"),
+        None
+    );
+    out.result.category = ExecutionCategory::Unknown.into();
+    assert_eq!(out.completion_event(query), None);
+    out.result.category = ExecutionCategory::Rejected.into();
+    out.result.upstream_code = Some("epay_code_-1".into());
+    assert_eq!(out.completion_event(query), None);
+}
+
+#[test]
 fn credential_interoperability_vector() {
     let c = crypto::credentials(br#"{"b":"line\n", "a":"x<&"}"#).unwrap();
     assert_eq!(c.canonical.as_slice(), br#"{"a":"x<&","b":"line\u000a"}"#);
