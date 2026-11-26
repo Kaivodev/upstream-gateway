@@ -412,6 +412,45 @@ async fn revocation_race_and_echo_quarantine() -> Result<()> {
     .await
 }
 
+#[tokio::test]
+#[ignore = "starts a real gateway process with PostgreSQL"]
+async fn create_classifies_refused_port_and_close_after_request() -> Result<()> {
+    instances(&["trade"], async |rows| {
+        let rpc = rows[0].start().await?;
+        let p = PackageCase::publish(&rpc, "sim_form_md5").await?;
+        let mut create = p.create();
+        let context = create.context.as_mut().unwrap();
+        let mut config: serde_json::Value = serde_json::from_slice(&context.config_json)?;
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+        config["gateway"] = format!("http://{}", listener.local_addr()?).into();
+        context.config_json = upstream_host::json::canonical(&config);
+        drop(listener);
+        let refused: CreatePaymentResponse = rpc.call(create).await?;
+        let x = refused.execution.unwrap();
+        ensure!(
+            x.category == ExecutionCategory::NotSent as i32
+                && x.error_code == "transport_connect"
+                && x.requests == 0
+                && x.responses == 0
+                && p.calls() == 0
+        );
+
+        let mut closed = p.close_after_request();
+        let received: CreatePaymentResponse = rpc.call(p.create()).await?;
+        let x = received.execution.unwrap();
+        ensure!(
+            x.category == ExecutionCategory::Unknown as i32
+                && x.error_code == "transport_error"
+                && x.requests == 1
+                && x.responses == 0
+                && p.calls() == 1
+        );
+        closed.try_recv()?;
+        Ok(())
+    })
+    .await
+}
+
 async fn crash(after_dispatch: bool) -> Result<()> {
     instances(&["trade"], async |rows| {
         let instance = &mut rows[0];

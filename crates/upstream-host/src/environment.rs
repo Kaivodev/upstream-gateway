@@ -35,6 +35,17 @@ impl std::fmt::Display for MissingResponse {
     }
 }
 impl std::error::Error for MissingResponse {}
+
+/// Egress policy rejected the upstream URL or a destination address.
+#[derive(Debug)]
+pub struct AddressForbidden;
+impl std::fmt::Display for AddressForbidden {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("forbidden upstream address")
+    }
+}
+impl std::error::Error for AddressForbidden {}
+
 pub struct Incoming {
     pub status: u16,
     pub headers: Headers,
@@ -61,9 +72,46 @@ pub enum Dispatch {
     Unconfirmed,
 }
 
+/// An opened connection. Dropping it writes no byte of the upstream HTTP request.
+pub trait Connection: Send {
+    fn send_wire(
+        self: Box<Self>,
+        template: &HttpRequest,
+        request: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming>;
+}
+
+/// Adapters with deferred I/O use their existing single-exchange implementation.
+impl<T: Transport + ?Sized> Connection for &T {
+    fn send_wire(
+        self: Box<Self>,
+        template: &HttpRequest,
+        request: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming> {
+        Transport::send_wire(*self, template, request, deadline, cancel)
+    }
+}
+
 /// Trusted single-exchange adapter. Enforce validated DNS/IP/TLS and header limits,
 /// disable retries and redirects, and honor the deadline through the final body read.
 pub trait Transport: Send + Sync {
+    /// Resolve and check the destination, connect directly or through the trusted
+    /// CONNECT proxy, and finish TLS before dispatch. An open error guarantees
+    /// the upstream received no byte of the HTTP request. The default defers
+    /// all I/O until the connection is sent.
+    fn open(
+        &self,
+        _template: &HttpRequest,
+        _deadline: Instant,
+        _cancel: &Cancellation,
+    ) -> Result<Box<dyn Connection + '_>> {
+        Ok(Box::new(self))
+    }
+
     fn send(
         &self,
         template: &HttpRequest,

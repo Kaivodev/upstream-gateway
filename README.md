@@ -73,7 +73,7 @@ Database TLS requires a single TCP host and uses TLS 1.2 or 1.3. With a CA file,
 Build from the repository root with BuildKit.
 
 ```sh
-docker build -t upstream-gateway:0.5.0 .
+docker build -t upstream-gateway:0.6.0 .
 ```
 
 The builder installs wasm-tools 1.263.0, fetches the locked host dependencies, and compiles the release binary with network access disabled. The shared deploy workflow may supply the `COMMIT` build argument and the optional `aipay_modules_token` secret. Neither is used.
@@ -99,6 +99,8 @@ Cloud KMS primary key-version rotation requires no file change. Keep the KMS ver
 Startup validates configuration and the selected identity material, applies migrations, registers an executor, starts maintenance, and loads registered components before binding the listener. Listener mTLS files are reread every 30 seconds. A changed bundle must validate as a whole and preserve its authentication usages before new handshakes adopt it. Established connections keep their original peer identity.
 
 SIGTERM closes admission and allows up to 75 seconds for active RPCs and detached journal workers to finish. Once the executor requires restart, new requests receive Unavailable while the listener drains, and the process exits unsuccessfully. Run under a supervisor that starts a new process identity on failure. The new executor seals a previously dispatched, interrupted operation as UNKNOWN with `dispatch_interrupted`. An operation without a dispatch marker can execute when its owner retries the original key.
+
+The gateway opens the upstream connection before it journals a dispatch. A URL or address rejected by egress policy returns `address_forbidden`. DNS, TCP, CONNECT tunnel and TLS setup failures return `transport_connect`. Cancellation during setup returns `cancelled`. If no earlier request was dispatched, the terminal result is NOT_SENT with zero requests and responses. Repeating the same idempotency key returns that sealed result. If an earlier request was dispatched, a later connection failure returns UNKNOWN and preserves the count. After a grant, a peer that closes before returning a complete HTTP response head yields UNKNOWN with `transport_error` and the dispatch counted.
 
 StoreCredentials returns an immutable reference and a digest. RegisterPackage requires the approved digests computed by replay. GetExchange returns authenticated evidence to the original caller. Callback screening fingerprints all stored credential values, including registered public keys. A callback reflecting one of these values can therefore produce `secret_leak` and quarantined evidence. The caller still receives the exchange ID and digest.
 

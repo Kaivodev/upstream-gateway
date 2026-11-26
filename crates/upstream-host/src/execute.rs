@@ -1,6 +1,6 @@
 use crate::{
     engine::{Host, Input, Loaded, Metric},
-    environment::{Cancellation, CapturedResponse, Dispatch, Environment},
+    environment::{AddressForbidden, Cancellation, CapturedResponse, Dispatch, Environment},
     http::{self, Check},
     json::{object, projected_len},
     package::{media, token},
@@ -270,35 +270,44 @@ fn exchange(
     transport: &dyn crate::environment::Transport,
     deadline: Instant,
 ) -> Check<HttpResponse> {
+    let connection = transport
+        .open(template, deadline, &s.cancel)
+        .map_err(|err| {
+            if s.cancel.cancelled() {
+                "cancelled"
+            } else if err.is::<AddressForbidden>() {
+                "address_forbidden"
+            } else {
+                "transport_connect"
+            }
+        })?;
     let number = out.requests + 1;
-    let authorization = s.env.authorize_dispatch(number, template);
-    let sent = match authorization {
+    let sent = match s.env.authorize_dispatch(number, template) {
+        Dispatch::Denied(code) => return Err(code),
+        Dispatch::Unconfirmed => {
+            out.requests = number;
+            drop(connection);
+            Err("dispatch_unconfirmed")
+        }
         Dispatch::Granted => {
             out.requests = number;
-            Some(transport.send_wire(template, &request, deadline, &s.cancel))
+            connection
+                .send_wire(template, &request, deadline, &s.cancel)
+                .map_err(|err| {
+                    if s.cancel.cancelled() {
+                        "cancelled"
+                    } else if err.is::<crate::environment::MissingResponse>() {
+                        "transport_response"
+                    } else {
+                        "transport_error"
+                    }
+                })
         }
-        _ => None,
     };
     drop(request);
     let mut captured = None;
     let result = (|| {
-        let sent = match authorization {
-            Dispatch::Denied(code) => return Err(code),
-            Dispatch::Unconfirmed => {
-                out.requests = number;
-                return Err("dispatch_unconfirmed");
-            }
-            Dispatch::Granted => sent.unwrap(),
-        };
-        let incoming = sent.map_err(|err| {
-            if s.cancel.cancelled() {
-                "cancelled"
-            } else if err.is::<crate::environment::MissingResponse>() {
-                "transport_response"
-            } else {
-                "transport_error"
-            }
-        })?;
+        let incoming = sent?;
         let mut body = Vec::new();
         let read = incoming.body.take(262145).read_to_end(&mut body);
         let oversized = body.len() > 262144;
@@ -365,15 +374,13 @@ fn exchange(
         }
         Ok(response)
     })();
-    if out.requests == number {
-        let code = result.as_ref().err().copied().unwrap_or("");
-        if s.env
-            .record_attempt(number, template, captured.as_ref(), code)
-            .is_err()
-            && code != "secret_leak"
-        {
-            return Err("host_service");
-        }
+    let code = result.as_ref().err().copied().unwrap_or("");
+    if s.env
+        .record_attempt(number, template, captured.as_ref(), code)
+        .is_err()
+        && code != "secret_leak"
+    {
+        return Err("host_service");
     }
     result
 }

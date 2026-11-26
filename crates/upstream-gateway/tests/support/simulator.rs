@@ -26,6 +26,7 @@ use upstream_host::{
 struct Hooks {
     hold: Option<oneshot::Receiver<()>>,
     echo: Option<Vec<u8>>,
+    close: Option<oneshot::Sender<()>>,
 }
 struct Mock {
     calls: AtomicUsize,
@@ -243,8 +244,12 @@ impl PackageCase {
                             let recorded =
                                 state.requests.get(path).context("unknown simulator URL")?;
                             state.signing_key.check(&parts, &bytes, recorded)?;
-                            let Hooks { hold, echo } =
+                            let Hooks { hold, echo, close } =
                                 std::mem::take(&mut *state.hooks.lock().unwrap());
+                            if let Some(close) = close {
+                                let _ = close.send(());
+                                anyhow::bail!("simulated close after request")
+                            }
                             if let Some(pause) = hold {
                                 let _ = pause.await;
                             }
@@ -302,6 +307,11 @@ impl PackageCase {
         let (tx, rx) = oneshot::channel();
         self.mock.hooks.lock().unwrap().hold = Some(rx);
         tx
+    }
+    pub fn close_after_request(&self) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.mock.hooks.lock().unwrap().close = Some(tx);
+        rx
     }
     pub fn echo(&self) -> Result<()> {
         self.mock.hooks.lock().unwrap().echo = Some(self.keys.shared("shared")?.to_vec());

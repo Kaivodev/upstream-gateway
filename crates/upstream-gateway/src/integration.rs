@@ -19,14 +19,14 @@ use std::{
     path::Path,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
 use tokio_postgres::Config;
 use tonic::Code;
 use upstream_host::{
-    environment::{Cancellation, CapturedResponse, Dispatch, Incoming, Transport},
+    environment::{Cancellation, CapturedResponse, Connection, Dispatch, Incoming, Transport},
     package::{Package, hex},
     types::HttpRequest,
 };
@@ -78,12 +78,24 @@ impl Kms for CountingKms {
     }
 }
 struct Offline {
+    opens: AtomicUsize,
+    fail_open: AtomicBool,
     calls: AtomicUsize,
     responses: BTreeMap<String, Vec<u8>>,
     echo: Mutex<Option<(bool, Vec<u8>)>>,
     pause: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
 }
 impl Transport for Offline {
+    fn open(
+        &self,
+        _: &HttpRequest,
+        _: Instant,
+        _: &Cancellation,
+    ) -> Result<Box<dyn Connection + '_>> {
+        self.opens.fetch_add(1, Ordering::SeqCst);
+        ensure!(!self.fail_open.load(Ordering::SeqCst), "connection refused");
+        Ok(Box::new(self))
+    }
     fn send(
         &self,
         _: &HttpRequest,
@@ -202,6 +214,8 @@ impl Suite {
             before_open: Default::default(),
         });
         let up = Arc::new(Offline {
+            opens: 0.into(),
+            fail_open: false.into(),
             calls: 0.into(),
             responses,
             echo: Default::default(),
@@ -485,6 +499,63 @@ fn template() -> HttpRequest {
         headers: vec![],
         body: vec![],
     }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL and packaged components"]
+async fn create_and_query_seal_open_failure_without_an_attempt() -> Result<()> {
+    for role in [Role::Trade, Role::Verification] {
+        schema(role, move |s| async move {
+            let call = async |key: &str| -> Result<(Vec<u8>, ExecutionResult)> {
+                match role {
+                    Role::Trade => {
+                        let r = s.g.create_payment(s.caller(), s.create(key)).await?;
+                        Ok((r.encode_to_vec(), r.execution.unwrap()))
+                    }
+                    Role::Verification => {
+                        let r = s.g.query_payment(s.caller(), s.query(key)).await?;
+                        Ok((r.encode_to_vec(), r.execution.unwrap()))
+                    }
+                }
+            };
+            s.up.fail_open.store(true, Ordering::SeqCst);
+            let (original, x) = call("offline").await?;
+            ensure!(
+                x.category == ExecutionCategory::NotSent as i32
+                    && x.error_code == "transport_connect"
+                    && x.requests == 0
+                    && x.responses == 0
+                    && !x.package_sha256.is_empty()
+                    && x.package_sha256 == s.ctx.package_sha256
+            );
+            s.evidence(&x).await?;
+            let count: i64 = s
+                .pool
+                .get()
+                .await?
+                .query_one(
+                    "SELECT count(*) FROM attempts WHERE exchange=$1",
+                    &[&x.exchange_id],
+                )
+                .await?
+                .get(0);
+            ensure!(count == 0 && s.up.opens.load(Ordering::SeqCst) == 1 && s.count() == 0);
+            s.up.fail_open.store(false, Ordering::SeqCst);
+            ensure!(call("offline").await?.0 == original);
+            ensure!(s.up.opens.load(Ordering::SeqCst) == 1 && s.count() == 0);
+            let (_, next) = call("recovered").await?;
+            ensure!(
+                next.category == ExecutionCategory::Succeeded as i32
+                    && next.requests == 1
+                    && next.responses == 1
+                    && next.exchange_id != x.exchange_id
+            );
+            ensure!(s.up.opens.load(Ordering::SeqCst) == 2 && s.count() == 1);
+            Ok(())
+        })
+        .await?;
+    }
+    Ok(())
 }
 
 #[tokio::test]

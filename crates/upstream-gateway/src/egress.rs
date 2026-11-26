@@ -20,7 +20,7 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 use upstream_host::{
-    environment::{Cancellation, Incoming, Transport, WireIncoming},
+    environment::{AddressForbidden, Cancellation, Connection, Incoming, Transport, WireIncoming},
     types::HttpRequest,
 };
 
@@ -32,6 +32,8 @@ pub struct Egress {
     mode: Mode,
     proxy: Option<ProxyAddress>,
     tls: TlsConnector,
+    #[cfg(test)]
+    direct_dials: std::sync::atomic::AtomicUsize,
 }
 pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
@@ -82,7 +84,7 @@ fn direct_target(addresses: &[SocketAddr], tls: bool, mode: Mode) -> Result<Sock
     let target = *addresses.first().context("no upstream address")?;
     ensure!(
         addresses.iter().all(|a| allowed_address(a.ip(), tls, mode)),
-        "forbidden address"
+        AddressForbidden
     );
     Ok(target)
 }
@@ -192,6 +194,36 @@ pub(crate) fn tls_connector(roots: RootCertStore) -> Result<TlsConnector> {
             .with_no_client_auth();
     Ok(TlsConnector::from(Arc::new(tls)))
 }
+
+#[derive(PartialEq, Eq)]
+struct Origin {
+    host: String,
+    port: u16,
+    tls: bool,
+}
+impl Origin {
+    fn parse(url: &str, allow_http: bool) -> Result<(Self, Uri)> {
+        let host = upstream_host::http::url(url, allow_http).map_err(|_| AddressForbidden)?;
+        let uri: Uri = url.parse()?;
+        let tls = uri.scheme_str() == Some("https");
+        let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
+        Ok((
+            Self {
+                host: host.into(),
+                port,
+                tls,
+            },
+            uri,
+        ))
+    }
+}
+
+struct Opened<'a> {
+    egress: &'a Egress,
+    origin: Origin,
+    socket: Socket,
+}
+
 impl Egress {
     pub fn new(
         runtime: Handle,
@@ -213,30 +245,45 @@ impl Egress {
             mode,
             proxy,
             tls,
+            #[cfg(test)]
+            direct_dials: Default::default(),
         })
     }
     pub fn public_roots() -> RootCertStore {
         RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned())
     }
-    async fn start(&self, r: &HttpRequest) -> Result<(Response<Body>, Driver)> {
-        let dev = self.mode.allow_http();
-        let host = upstream_host::http::url(&r.url, dev).map_err(anyhow::Error::msg)?;
-        let uri: Uri = r.url.parse()?;
-        let tls = uri.scheme_str() == Some("https");
-        let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
+    async fn connect(&self, template: &HttpRequest) -> Result<Opened<'_>> {
+        let (origin, _) = Origin::parse(&template.url, self.mode.allow_http())?;
+        let host = origin.host.as_str();
+        let port = origin.port;
         let mut stream: Socket = if let Some(proxy) = &self.proxy {
             proxy.tunnel(host, port).await?
         } else {
             let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
-            Box::new(TcpStream::connect(direct_target(&addresses, tls, self.mode)?).await?)
+            let target = direct_target(&addresses, origin.tls, self.mode)?;
+            #[cfg(test)]
+            self.direct_dials
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Box::new(TcpStream::connect(target).await?)
         };
-        if tls {
+        if origin.tls {
             stream = Box::new(
                 self.tls
                     .connect(ServerName::try_from(host.to_owned())?, stream)
                     .await?,
             );
         }
+        Ok(Opened {
+            egress: self,
+            origin,
+            socket: stream,
+        })
+    }
+}
+impl Opened<'_> {
+    async fn start(self, r: &HttpRequest) -> Result<(Response<Body>, Driver)> {
+        let (origin, uri) = Origin::parse(&r.url, self.egress.mode.allow_http())?;
+        ensure!(origin == self.origin, "expanded request changed origin");
         let mut req = Request::builder()
             .method(r.method.as_str())
             .uri(uri.path_and_query().map_or("/", |v| v.as_str()))
@@ -250,14 +297,14 @@ impl Egress {
             }
         }
         request(
-            stream,
+            self.socket,
             req.body(Full::new(Bytes::copy_from_slice(&r.body)))?,
             false,
         )
         .await
     }
     async fn exchange(
-        &self,
+        self,
         r: &HttpRequest,
         deadline: Instant,
         cancel: &Cancellation,
@@ -308,15 +355,41 @@ impl Egress {
         })
     }
 }
-impl Transport for Egress {
+impl Connection for Opened<'_> {
     fn send_wire(
-        &self,
+        self: Box<Self>,
         _: &HttpRequest,
         r: &HttpRequest,
         deadline: Instant,
         cancel: &Cancellation,
     ) -> Result<WireIncoming> {
-        self.runtime.block_on(self.exchange(r, deadline, cancel))
+        self.egress
+            .runtime
+            .block_on(self.exchange(r, deadline, cancel))
+    }
+}
+impl Transport for Egress {
+    fn open(
+        &self,
+        template: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<Box<dyn Connection + '_>> {
+        let opened = self
+            .runtime
+            .block_on(bounded(deadline, cancel, self.connect(template)))?;
+        Ok(Box::new(opened))
+    }
+
+    fn send_wire(
+        &self,
+        template: &HttpRequest,
+        r: &HttpRequest,
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<WireIncoming> {
+        self.open(template, deadline, cancel)?
+            .send_wire(template, r, deadline, cancel)
     }
     fn send(
         &self,
