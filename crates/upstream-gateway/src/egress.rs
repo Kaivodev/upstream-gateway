@@ -58,6 +58,9 @@ fn public(ip: IpAddr) -> bool {
         }
     }
 }
+fn allowed_address(ip: IpAddr, tls: bool, allow_loopback: bool) -> bool {
+    tls && public(ip) || allow_loopback && ip.is_loopback()
+}
 struct Driver(JoinHandle<()>);
 impl Drop for Driver {
     fn drop(&mut self) {
@@ -140,9 +143,7 @@ impl Egress {
         let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
         let target = *addresses.first().context("no upstream address")?;
         ensure!(
-            addresses
-                .iter()
-                .all(|a| public(a.ip()) || dev && a.ip().is_loopback()),
+            addresses.iter().all(|a| allowed_address(a.ip(), tls, dev)),
             "forbidden address"
         );
         let mut stream: Socket = Box::new(TcpStream::connect(self.proxy.unwrap_or(target)).await?);

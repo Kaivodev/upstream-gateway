@@ -245,6 +245,26 @@ fn raw_decoder_and_method_options() {
     assert!(methods.iter().all(|m| m.options().has_extension(&policy)));
 }
 #[test]
+fn http_secret_fields_follow_the_loopback_http_setting() {
+    for role in [Role::Trade, Role::Verification] {
+        let production = Mode::Production.host_options(role);
+        assert!(!production.test_only_allow_http_secret_fields);
+        assert!(!production.test_only_allow_http);
+        for allow_loopback_http in [false, true] {
+            let development = Mode::Development {
+                allow_loopback_http,
+                allow_uncommitted: true,
+            }
+            .host_options(role);
+            assert_eq!(
+                development.test_only_allow_http_secret_fields,
+                allow_loopback_http
+            );
+            assert_eq!(development.test_only_allow_http, allow_loopback_http);
+        }
+    }
+}
+#[test]
 fn local_kms_mode_permissions_and_aad() {
     use std::{io::Write, os::unix::fs::PermissionsExt, sync::Arc};
     let mut file = tempfile::NamedTempFile::new().unwrap();

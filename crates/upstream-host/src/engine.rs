@@ -32,6 +32,8 @@ const DEFAULT_FUEL: u64 =
 pub struct Options {
     pub plugin_type: String,
     pub test_only_allow_http: bool,
+    /// Allow HTTP field substitution in offline replay or on a development loopback transport.
+    pub test_only_allow_http_secret_fields: bool,
     pub test_only_allow_uncommitted: bool,
     /// Provisional two-package budget. Recalibrate with all four packages before freezing.
     pub fuel_per_step: u64,
@@ -45,6 +47,7 @@ impl Options {
         Self {
             plugin_type: role.into(),
             test_only_allow_http: false,
+            test_only_allow_http_secret_fields: false,
             test_only_allow_uncommitted: false,
             fuel_per_step: DEFAULT_FUEL,
             pool_slots: 32,
@@ -59,6 +62,7 @@ impl Options {
         Self {
             step_wall_clock: Duration::from_secs(5),
             test_only_allow_http: true,
+            test_only_allow_http_secret_fields: true,
             test_only_allow_uncommitted: true,
             ..Self::production(role)
         }

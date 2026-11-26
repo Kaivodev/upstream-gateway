@@ -45,6 +45,30 @@ pub struct Build {
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct SecretFields {
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub query: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub form: Option<Vec<String>>,
+}
+
+// An omitted member is optional. An explicit null is not a declaration.
+fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub r#type: String,
     pub code: String,
@@ -52,6 +76,8 @@ pub struct Manifest {
     pub abi_version: u32,
     pub domains: Vec<String>,
     pub secrets: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_fields: Option<SecretFields>,
     pub public_keys: Vec<String>,
     pub config: BTreeMap<String, Field>,
     pub capabilities: Vec<String>,
@@ -169,6 +195,10 @@ impl Manifest {
             v.get("callback").is_none_or(|c| c.is_object()),
             "invalid callback"
         );
+        ensure!(
+            v.get("secret_fields").is_none_or(|f| f.is_object()),
+            "invalid secret fields"
+        );
         let m: Self = serde_json::from_value(v)?;
         m.validate()?;
         Ok(m)
@@ -199,9 +229,15 @@ impl Manifest {
             !ops.is_empty() && unique(ops) && ops.iter().all(|x| OPS.contains(&x.as_str())),
             "invalid capabilities"
         );
+        // The owner can approve a query-payment-only verifier when an upstream cannot
+        // issue read-only credentials. Each instance seals the same merchant key
+        // independently. The gateway enforces capabilities; approval is the owner's decision.
         ensure!(
             self.r#type != "verification"
-                || (ops.len() == 2 && has("query_payment") && has("query_refund")),
+                || (has("query_payment")
+                    && ops
+                        .iter()
+                        .all(|s| matches!(s.as_str(), "query_payment" | "query_refund"))),
             "invalid verification capabilities"
         );
         ensure!(
@@ -258,6 +294,28 @@ impl Manifest {
                 && self.config.values().all(|f| f.r#type == "string"),
             "invalid field definition"
         );
+        if let Some(fields) = &self.secret_fields {
+            ensure!(
+                fields.query.is_some() || fields.form.is_some(),
+                "secret fields require a query or form group"
+            );
+            ensure!(
+                self.secrets.values().any(|s| s == "shared"),
+                "secret fields require a shared secret"
+            );
+            for names in [&fields.query, &fields.form].into_iter().flatten() {
+                ensure!(
+                    (1..=16).contains(&names.len())
+                        && unique(names)
+                        && names
+                            .iter()
+                            .all(|n| (1..=64).contains(&n.len())
+                                && n.bytes().all(|b| b.is_ascii_alphanumeric()
+                                    || matches!(b, b'_' | b'-' | b'.'))),
+                    "invalid secret fields"
+                );
+            }
+        }
         let b = &self.build;
         ensure!(
             b.rust_version == "1.99.1"

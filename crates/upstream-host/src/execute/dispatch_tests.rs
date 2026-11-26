@@ -82,7 +82,7 @@ fn trial(action: u8) -> (Arc<Fixture>, Execution) {
         &state,
         &mut out,
         &r,
-        &mut r.clone(),
+        Zeroizing::new(r.clone()),
         &*env,
         Instant::now() + Duration::from_secs(1),
     );

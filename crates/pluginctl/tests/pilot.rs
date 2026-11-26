@@ -81,6 +81,27 @@ fn real_packages_replay_and_verify() -> Result<()> {
         assert_eq!(a["passed"], true);
         assert_eq!(a["cases"].as_array().unwrap().len(), count);
         assert_eq!(a, r.run()?);
+        if name == "sim_form_md5_verify" {
+            let mut verifier = Package::read(&out)?;
+            verifier.manifest.capabilities = vec!["query_payment".into()];
+            verifier
+                .fixtures
+                .retain(|path, _| path.starts_with("fixtures/query_payment_"));
+            let report = Replay::new(&verifier)?.run()?;
+            assert_eq!(report["passed"], true);
+            assert_eq!(report["cases"].as_array().unwrap().len(), 5);
+            let host = Host::new(Options::replay("verification"))?;
+            let loaded = host.load(&verifier)?;
+            let result = host.execute(
+                &loaded,
+                "query_refund",
+                b"{}",
+                Services::new("fresh"),
+                Default::default(),
+            );
+            assert_eq!(result.error_code.as_deref(), Some("unsupported_operation"));
+            assert_eq!((result.steps, result.requests), (0, 0));
+        }
         if name.ends_with("_verify") {
             let mut broken = Package::read(&out)?;
             for (scenario, change) in [
@@ -215,12 +236,22 @@ struct Services {
     logs: AtomicUsize,
 }
 impl Services {
+    fn check_template(&self, r: &HttpRequest) {
+        if matches!(self.mode.as_str(), "reflect_query" | "reflect_form") {
+            assert!(r.url == "https://example.test/query?key={{secret:shared}}");
+            assert!(r.body == b"key=%7b%7bsecret:shared%7d%7d");
+        }
+    }
     fn new(mode: &str) -> Arc<Self> {
         let mut bytes = Zeroizing::new([0; 16]);
         getrandom::fill(&mut *bytes).unwrap();
+        let mut material = hex(bytes.as_slice()).into_bytes();
+        if matches!(mode, "reflect_query" | "reflect_form") {
+            material.extend_from_slice(" &=%é".as_bytes());
+        }
         Arc::new(Self {
             mode: mode.into(),
-            material: Zeroizing::new(hex(bytes.as_slice()).into_bytes()),
+            material: Zeroizing::new(material),
             offset: Mutex::new(0),
             alerts: 0.into(),
             resolutions: 0.into(),
@@ -229,6 +260,29 @@ impl Services {
     }
 }
 impl Environment for Services {
+    fn authorize_dispatch(
+        &self,
+        _: usize,
+        template: &HttpRequest,
+    ) -> upstream_host::environment::Dispatch {
+        self.check_template(template);
+        upstream_host::environment::Dispatch::Granted
+    }
+    fn record_attempt(
+        &self,
+        _: usize,
+        template: &HttpRequest,
+        response: Option<&upstream_host::environment::CapturedResponse>,
+        code: &str,
+    ) -> Result<()> {
+        self.check_template(template);
+        if matches!(self.mode.as_str(), "reflect_query" | "reflect_form") {
+            assert_eq!(code, "secret_leak");
+            let r = response.unwrap();
+            assert!(r.headers.is_empty() && r.body.is_empty() && !r.complete);
+        }
+        Ok(())
+    }
     fn config(&self, _: &Cancellation) -> BTreeMap<String, String> {
         BTreeMap::from([("mode".into(), self.mode.clone())])
     }
@@ -260,8 +314,8 @@ impl Environment for Services {
 impl Transport for Services {
     fn send(
         &self,
-        _: &HttpRequest,
-        _: &HttpRequest,
+        template: &HttpRequest,
+        request: &HttpRequest,
         _: Instant,
         c: &Cancellation,
     ) -> Result<Incoming> {
@@ -273,14 +327,29 @@ impl Transport for Services {
             0,
             "logs delivered before dispatch"
         );
+        self.check_template(template);
         let mut body = Vec::new();
+        let mut headers = vec![];
+        if matches!(self.mode.as_str(), "reflect_query" | "reflect_form") {
+            let expected = format!(
+                "key={}",
+                kaivo_upstream_sdk::form::query_escape(&self.material)
+            );
+            assert!(request.url.split_once('?').unwrap().1 == expected);
+            assert!(request.body == expected.as_bytes());
+            if self.mode == "reflect_query" {
+                headers.push(("X-Echo".into(), vec![request.url.clone()]));
+            } else {
+                body.extend_from_slice(&request.body);
+            }
+        }
         if self.mode == "reflect" {
             body.extend(&*self.material);
             c.cancel()
         }
         Ok(Incoming {
             status: 200,
-            headers: vec![],
+            headers,
             body: Box::new(Cursor::new(body)),
         })
     }
@@ -344,6 +413,8 @@ fn sandbox_boundaries() -> Result<()> {
         ("leak_body", "secret_leak", 0),
         ("leak_step", "secret_leak", 0),
         ("reflect", "secret_leak", 1),
+        ("reflect_query", "secret_leak", 1),
+        ("reflect_form", "secret_leak", 1),
         ("missing_response", "transport_response", 1),
         ("undeclared", "undeclared_config", 0),
         ("clock", "sandbox_trap", 0),

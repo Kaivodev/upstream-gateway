@@ -12,6 +12,7 @@ use kaivo_upstream_sdk::{time, valid_money};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, io::Read, sync::Arc, time::Instant};
+use zeroize::Zeroizing;
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Execution {
@@ -265,7 +266,7 @@ fn exchange(
     s: &State,
     out: &mut Execution,
     template: &HttpRequest,
-    request: &mut HttpRequest,
+    request: Zeroizing<HttpRequest>,
     transport: &dyn crate::environment::Transport,
     deadline: Instant,
 ) -> Check<HttpResponse> {
@@ -274,15 +275,11 @@ fn exchange(
     let sent = match authorization {
         Dispatch::Granted => {
             out.requests = number;
-            Some(transport.send_wire(template, request, deadline, &s.cancel))
+            Some(transport.send_wire(template, &request, deadline, &s.cancel))
         }
         _ => None,
     };
-    for (_, values) in &mut request.headers {
-        for v in values {
-            zeroize::Zeroize::zeroize(v)
-        }
-    }
+    drop(request);
     let mut captured = None;
     let result = (|| {
         let sent = match authorization {
@@ -311,6 +308,17 @@ fn exchange(
                 .iter()
                 .any(|(k, vs)| s.scan.bytes(k.as_bytes()) || vs.iter().any(|v| s.scan.bytes(v)));
         body.truncate(262144);
+        // A reflected field can contain the entire expanded URL or body. Keep only
+        // the status in the quarantined receipt for packages declaring these fields.
+        if leaked && s.m.secret_fields.is_some() {
+            captured = Some(CapturedResponse {
+                status: incoming.status,
+                headers: vec![],
+                body: vec![],
+                complete: false,
+            });
+            return Err("secret_leak");
+        }
         let raw = captured.insert(CapturedResponse {
             status: incoming.status,
             headers: incoming.headers,
@@ -443,7 +451,7 @@ impl Host {
                 };
                 let next = result?;
                 match next {
-                    Step::Request(mut r) => {
+                    Step::Request(r) => {
                         if s.scan.bytes(r.url.as_bytes())
                             || s.scan.bytes(&r.body)
                             || scan_headers(&s, &r.headers)
@@ -464,7 +472,7 @@ impl Host {
                         if step == 5 {
                             return Err("step_limit");
                         }
-                        if r.body.len() > 262144 {
+                        if r.body.len() > http::REQUEST_BODY_LIMIT {
                             return Err("request_limit");
                         }
                         if !token(&r.method) || r.method != r.method.to_ascii_uppercase() {
@@ -474,16 +482,15 @@ impl Host {
                         if !s.m.domains.iter().any(|x| x == host) {
                             return Err("domain_forbidden");
                         }
-                        if r.url.contains("{{secret:")
-                            || memchr::memmem::find(&r.body, b"{{secret:").is_some()
-                        {
-                            return Err("secret_placeholder");
-                        }
-                        let template = r.clone();
+                        let template = r;
+                        let fields = http::RequestTemplate::validate(
+                            &s.m,
+                            &template,
+                            self.options.test_only_allow_http_secret_fields,
+                        )?;
                         let transport = s.env.transport().ok_or("transport_unavailable")?;
-                        r.headers = http::expand(&s.m, &r.headers, |n| {
-                            String::from_utf8(s.secrets.get(n)?.to_vec()).ok()
-                        })?;
+                        let request = fields
+                            .expand(http::REQUEST_BODY_LIMIT, |n| s.secrets.get(n).cloned())?;
                         s.check()?;
                         drop(timer);
                         drop(permit);
@@ -492,7 +499,7 @@ impl Host {
                             deadline = deadline.min(d)
                         }
                         let response =
-                            exchange(&s, &mut out, &template, &mut r, transport, deadline)?;
+                            exchange(&s, &mut out, &template, request, transport, deadline)?;
                         history.push(response_value(&response));
                         responses.push(response);
                         out.responses += 1;

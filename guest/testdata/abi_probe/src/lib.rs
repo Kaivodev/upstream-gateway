@@ -93,6 +93,15 @@ impl Trade for Probe {
                 host::log("info", "before reflected response", &[]);
                 return Step::Request(req);
             }
+            "reflect_query" | "reflect_form" => {
+                req.url.push_str("?key={{secret:shared}}");
+                req.headers.push((
+                    "Content-Type".into(),
+                    vec!["application/x-www-form-urlencoded".into()],
+                ));
+                req.body = b"key=%7b%7bsecret:shared%7d%7d".to_vec();
+                return Step::Request(req);
+            }
             "after_request" if c.responses.is_empty() => {
                 host::log("info", "before dispatch", &[]);
                 return Step::Request(req);

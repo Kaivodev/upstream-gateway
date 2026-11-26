@@ -61,6 +61,71 @@ fn manifest_permissions() {
     assert!(Manifest::parse(&json::canonical(&bad)).is_err());
 }
 #[test]
+fn declared_secret_fields_manifest() {
+    // The canonical manifest projection is part of the package digest.
+    let mut v = manifest();
+    let before = json::canonical(&v);
+    let m = Manifest::parse(&before).unwrap();
+    assert_eq!(json::canonical(&json!(&m)), before);
+    for fields in [
+        json!({"query":["9.A_-"]}),
+        json!({"form":["x".repeat(64)]}),
+        json!({"query":["key"], "form":["key"]}),
+    ] {
+        v["secret_fields"] = fields;
+        let canonical = json::canonical(&v);
+        assert_eq!(
+            json::canonical(&json!(Manifest::parse(&canonical).unwrap())),
+            canonical
+        );
+    }
+    for fields in [
+        Value::Null,
+        json!([]),
+        json!({}),
+        json!({"header":["x"]}),
+        json!({"form":[]}),
+        json!({"query":null}),
+        json!({"query":"key"}),
+        json!({"query":[""]}),
+        json!({"form":["x","x"]}),
+        json!({"form":["a/b"]}),
+        json!({"query":["é"]}),
+        json!({"query":["x".repeat(65)]}),
+        json!({"form":(0..17).map(|i| i.to_string()).collect::<Vec<_>>()}),
+    ] {
+        v["secret_fields"] = fields;
+        assert!(
+            Manifest::parse(&json::canonical(&v)).is_err(),
+            "accepted {}",
+            v["secret_fields"]
+        );
+    }
+    v["secret_fields"] = json!({"query":["key"]});
+    for secrets in [json!({}), json!({"signer":"rsa-private"})] {
+        v["secrets"] = secrets;
+        assert!(Manifest::parse(&json::canonical(&v)).is_err());
+    }
+}
+#[test]
+fn verification_capabilities() {
+    let mut v = manifest();
+    v["type"] = json!("verification");
+    v.as_object_mut().unwrap().remove("callback");
+    for (ops, valid) in [
+        (json!(["query_payment"]), true),
+        (json!(["query_refund", "query_payment"]), true),
+        (json!(["query_payment", "query_refund"]), true),
+        (json!(["query_refund"]), false),
+        (json!([]), false),
+        (json!(["query_payment", "create_payment"]), false),
+        (json!(["query_payment", "refund", "query_refund"]), false),
+    ] {
+        v["capabilities"] = ops;
+        assert_eq!(Manifest::parse(&json::canonical(&v)).is_ok(), valid);
+    }
+}
+#[test]
 fn http_policy() {
     for s in [
         "HTTPS://example.test",

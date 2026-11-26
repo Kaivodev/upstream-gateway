@@ -29,6 +29,18 @@ async fn head(s: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     Ok(String::from_utf8(b)?)
 }
 #[test]
+fn cleartext_egress_requires_a_development_loopback_address() {
+    for ip in ["127.0.0.1", "::1"].map(|s| s.parse().unwrap()) {
+        assert!(allowed_address(ip, false, true));
+        assert!(!allowed_address(ip, false, false));
+    }
+    let public_ip = "8.8.8.8".parse().unwrap();
+    for allow_loopback in [false, true] {
+        assert!(!allowed_address(public_ip, false, allow_loopback));
+        assert!(allowed_address(public_ip, true, allow_loopback));
+    }
+}
+#[test]
 fn public_address_policy() {
     for s in [
         "127.0.0.1",
@@ -91,7 +103,7 @@ async fn tls_and_pinned_connect_tunnel() -> Result<()> {
                 ensure!(s.get_ref().1.server_name() == Some("localhost"));
             }
             let h = head(&mut s).await?;
-            ensure!(h.starts_with("GET /pay HTTP/1.1"));
+            ensure!(h.starts_with("GET /pay?tag=one&tag=%zz HTTP/1.1\r\n"));
             s.write_all(
                 b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Multi: a\r\nX-Multi: b\r\n\r\ntest",
             )
@@ -106,9 +118,9 @@ async fn tls_and_pinned_connect_tunnel() -> Result<()> {
             roots.clone(),
         )?;
         let r = get(if proxy {
-            "https://localhost/pay".into()
+            "https://localhost/pay?tag=one&tag=%zz".into()
         } else {
-            format!("https://{addr}/pay")
+            format!("https://{addr}/pay?tag=one&tag=%zz")
         });
         let mut response = e
             .exchange(

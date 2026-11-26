@@ -9,6 +9,10 @@
   "secrets": {
     "shared": "shared"
   },
+  "secret_fields": {
+    "query": ["key"],
+    "form": ["key"]
+  },
   "public_keys": [],
   "config": {
     "mode": {

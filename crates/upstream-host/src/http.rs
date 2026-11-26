@@ -1,9 +1,17 @@
 use crate::{
-    package::{Manifest, domain, token},
-    types::Headers,
+    package::{Manifest, domain, media, token},
+    types::{Headers, HttpRequest},
 };
-use std::{collections::BTreeMap, net::Ipv4Addr};
+use kaivo_upstream_sdk::form;
+use memchr::memmem::find;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::Ipv4Addr,
+    ops::Range,
+};
+use zeroize::{Zeroize, Zeroizing};
 pub type Check<T> = Result<T, &'static str>;
+pub(crate) const REQUEST_BODY_LIMIT: usize = 256 << 10;
 pub fn id(s: &str) -> bool {
     (1..=100).contains(&s.len())
         && s.bytes()
@@ -21,7 +29,16 @@ pub fn valid_device(s: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 pub fn url(s: &str, http: bool) -> Check<&str> {
+    check_url_placeholder(s)?;
     parse_url(s, http, true)
+}
+fn check_url_placeholder(url: &str) -> Check<()> {
+    let (target, fragment) = url.split_once('#').unwrap_or((url, ""));
+    let path = target.split_once('?').map_or(target, |(p, _)| p);
+    if path.contains("{{secret:") || fragment.contains("{{secret:") {
+        return Err("secret_placeholder");
+    }
+    Ok(())
 }
 pub fn instruction_url(s: &str, http: bool) -> bool {
     parse_url(s, http, false).is_ok()
@@ -74,9 +91,15 @@ fn parse_url(s: &str, http: bool, egress: bool) -> Check<&str> {
     {
         return Err("request_url");
     }
-    for (i, b) in s.bytes().enumerate() {
+    // Outbound query bytes are opaque unless the manifest declares secret fields.
+    let escaped = if egress {
+        s.split_once('?').map_or(s, |(path, _)| path)
+    } else {
+        s
+    };
+    for (i, b) in escaped.bytes().enumerate() {
         if b == b'%'
-            && !s
+            && !escaped
                 .as_bytes()
                 .get(i + 1..i + 3)
                 .is_some_and(|p| p.iter().all(u8::is_ascii_hexdigit))
@@ -167,7 +190,7 @@ pub fn expand(
                 return Err("secret_placeholder");
             }
             let s = zeroize::Zeroizing::new(secret(key).ok_or("secret_placeholder")?);
-            if s.bytes().any(|b| b != 9 && (b < 32 || b == 127)) {
+            if invalid_secret_bytes(s.as_bytes()) {
                 return Err("secret_placeholder");
             }
             *v = format!("{pre}{}{post}", s.as_str());
@@ -187,3 +210,192 @@ pub fn expand(
     }
     Ok(out)
 }
+
+fn invalid_secret_bytes(bytes: &[u8]) -> bool {
+    bytes.iter().any(|&b| b != b'\t' && (b < 32 || b == 127))
+}
+
+// Match decoded names and values, retaining the original offsets for the wire request.
+fn field_replacements<'a>(
+    m: &'a Manifest,
+    declared: &[String],
+    bytes: &[u8],
+    mut offset: usize,
+) -> Check<Vec<(Range<usize>, &'a str)>> {
+    let mut seen = BTreeSet::new();
+    let mut replacements = Vec::new();
+    for pair in bytes.split(|&b| b == b'&') {
+        let end = offset + pair.len();
+        offset = end + 1;
+        if pair.is_empty() {
+            continue;
+        }
+        let (key, values) = form::parse(pair)
+            .and_then(|mut fields| fields.pop_first())
+            .ok_or("secret_placeholder")?;
+        let allowed = declared.iter().any(|n| n.as_bytes() == key);
+        if find(&key, b"{{secret:").is_some() || allowed && !seen.insert(key) {
+            return Err("secret_placeholder");
+        }
+        let value = &values[0];
+        if !allowed {
+            if find(value, b"{{secret:").is_some() {
+                return Err("secret_placeholder");
+            }
+        } else if find(value, b"{{").is_some() || find(value, b"}}").is_some() {
+            let name = value
+                .strip_prefix(b"{{secret:")
+                .and_then(|s| s.strip_suffix(b"}}"))
+                .and_then(|s| std::str::from_utf8(s).ok())
+                .and_then(|n| m.secrets.get_key_value(n))
+                .filter(|(_, kind)| *kind == "shared")
+                .ok_or("secret_placeholder")?
+                .0;
+            let eq = pair
+                .iter()
+                .position(|&b| b == b'=')
+                .ok_or("secret_placeholder")?;
+            replacements.push((end - pair.len() + eq + 1..end, name.as_str()));
+        }
+    }
+    Ok(replacements)
+}
+
+fn replace_values(
+    bytes: &[u8],
+    replacements: &[(Range<usize>, &str)],
+    limit: usize,
+    secret: &mut impl FnMut(&str) -> Option<Zeroizing<Vec<u8>>>,
+) -> Check<Vec<u8>> {
+    let mut size = bytes.len() - replacements.iter().map(|(r, _)| r.len()).sum::<usize>();
+    let mut values = Vec::with_capacity(replacements.len());
+    for (range, name) in replacements {
+        let key = secret(name).ok_or("secret_placeholder")?;
+        if invalid_secret_bytes(&key) {
+            return Err("secret_placeholder");
+        }
+        let encoded = Zeroizing::new(form::query_escape(&key));
+        size += encoded.len();
+        if size > limit {
+            return Err("request_limit");
+        }
+        values.push((range, encoded));
+    }
+    let mut out = Vec::with_capacity(size);
+    let mut pos = 0;
+    for (range, encoded) in values {
+        out.extend_from_slice(&bytes[pos..range.start]);
+        out.extend_from_slice(encoded.as_bytes());
+        pos = range.end;
+    }
+    out.extend_from_slice(&bytes[pos..]);
+    Ok(out)
+}
+
+impl Zeroize for HttpRequest {
+    fn zeroize(&mut self) {
+        self.url.zeroize();
+        self.body.zeroize();
+        for (_, values) in &mut self.headers {
+            values.zeroize();
+        }
+    }
+}
+
+pub(crate) struct RequestTemplate<'a> {
+    manifest: &'a Manifest,
+    request: &'a HttpRequest,
+    query: Vec<(Range<usize>, &'a str)>,
+    form: Vec<(Range<usize>, &'a str)>,
+}
+impl<'a> RequestTemplate<'a> {
+    pub fn validate(
+        m: &'a Manifest,
+        template: &'a HttpRequest,
+        test_only_allow_http_fields: bool,
+    ) -> Check<Self> {
+        let Some(fields) = &m.secret_fields else {
+            if template.url.contains("{{secret:") || find(&template.body, b"{{secret:").is_some() {
+                return Err("secret_placeholder");
+            }
+            return Ok(Self {
+                manifest: m,
+                request: template,
+                query: Vec::new(),
+                form: Vec::new(),
+            });
+        };
+        check_url_placeholder(&template.url)?;
+        let mut query = Vec::new();
+        if let Some((path, raw)) = template.url.split_once('?') {
+            query = field_replacements(
+                m,
+                fields.query.as_deref().unwrap_or_default(),
+                raw.as_bytes(),
+                path.len() + 1,
+            )?;
+        }
+        let mut content_types = template
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("Content-Type"))
+            .flat_map(|(_, values)| values);
+        let form = if let Some(content_type) = content_types.next()
+            && content_types.next().is_none()
+            && media(content_type).as_deref() == Some("application/x-www-form-urlencoded")
+        {
+            field_replacements(
+                m,
+                fields.form.as_deref().unwrap_or_default(),
+                &template.body,
+                0,
+            )?
+        } else {
+            if find(&template.body, b"{{secret:").is_some() {
+                return Err("secret_placeholder");
+            }
+            Vec::new()
+        };
+
+        if !(query.is_empty() && form.is_empty())
+            && !test_only_allow_http_fields
+            && !template.url.starts_with("https://")
+        {
+            return Err("https_required");
+        }
+        Ok(Self {
+            manifest: m,
+            request: template,
+            query,
+            form,
+        })
+    }
+
+    pub fn expand(
+        &self,
+        body_limit: usize,
+        mut secret: impl FnMut(&str) -> Option<Zeroizing<Vec<u8>>>,
+    ) -> Check<Zeroizing<HttpRequest>> {
+        let template = self.request;
+        let mut request = Zeroizing::new(template.clone());
+        request.headers = expand(self.manifest, &template.headers, |n| {
+            String::from_utf8(secret(n)?.to_vec()).ok()
+        })?;
+        if !self.query.is_empty() {
+            // The gateway HTTP transport parses an http::Uri, whose maximum length is 65534 bytes.
+            let url = replace_values(
+                template.url.as_bytes(),
+                &self.query,
+                u16::MAX as usize - 1,
+                &mut secret,
+            )?;
+            request.url = String::from_utf8(url).map_err(|_| "request_url")?;
+        }
+        if !self.form.is_empty() {
+            request.body = replace_values(&template.body, &self.form, body_limit, &mut secret)?;
+        }
+        Ok(request)
+    }
+}
+#[cfg(test)]
+mod tests;

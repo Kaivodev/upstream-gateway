@@ -29,6 +29,17 @@ use upstream_host::{
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+impl Mode {
+    pub(super) fn host_options(self, role: Role) -> Options {
+        Options {
+            test_only_allow_http: self.allow_http(),
+            test_only_allow_http_secret_fields: self.allow_http(),
+            test_only_allow_uncommitted: self.allow_uncommitted(),
+            ..Options::production(role.world())
+        }
+    }
+}
+
 pub trait Events: Send + Sync {
     fn alert(&self, code: &'static str);
     fn log(&self, event: &serde_json::Value);
@@ -100,9 +111,7 @@ impl Gateway {
         }
         let vault = Vault(kms);
         let fingerprints = db::migrate(&pool, role, &vault).await?;
-        let mut options = Options::production(role.world());
-        options.test_only_allow_http = mode.allow_http();
-        options.test_only_allow_uncommitted = mode.allow_uncommitted();
+        let options = mode.host_options(role);
         let host = tokio::task::spawn_blocking(move || Host::new(options))
             .await
             .db()?

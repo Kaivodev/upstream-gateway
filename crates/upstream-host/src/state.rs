@@ -20,6 +20,11 @@ pub struct Scanner(Vec<Zeroizing<Vec<u8>>>);
 impl Scanner {
     pub fn add(&mut self, b: &[u8]) {
         self.0.push(Zeroizing::new(b.to_vec()));
+        // Upstreams can reflect the exact encoded query or form bytes they received.
+        let escaped = Zeroizing::new(kaivo_upstream_sdk::form::query_escape(b).into_bytes());
+        if escaped.as_slice() != b {
+            self.0.push(escaped);
+        }
         for s in [
             hex(b),
             hex(b).to_ascii_uppercase(),

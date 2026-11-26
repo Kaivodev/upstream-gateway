@@ -158,18 +158,19 @@ fn check_evidence(bytes: &[u8], protected: &Scanner) -> Result<()> {
     ensure!(!protected.bytes(bytes), "protected data in fixture");
     Fixture::decode(bytes)?;
     let fixture: Value = serde_json::from_slice(bytes)?;
+    let check_fields = |raw: &[u8]| -> Result<()> {
+        for (key, values) in form::parse_query(raw).0 {
+            ensure!(
+                !protected.bytes(&key) && values.iter().all(|v| !protected.bytes(v)),
+                "protected form field"
+            );
+        }
+        Ok(())
+    };
     let check_wire = |value: &Value| -> Result<()> {
         let raw = BASE64_STANDARD.decode(value.as_str().context("invalid recorded bytes")?)?;
         ensure!(!protected.bytes(&raw), "protected data in recorded bytes");
-        if let Some(fields) = form::parse(&raw) {
-            for (key, values) in fields {
-                ensure!(
-                    !protected.bytes(&key) && values.iter().all(|v| !protected.bytes(v)),
-                    "protected form field"
-                );
-            }
-        }
-        Ok(())
+        check_fields(&raw)
     };
     for key in ["raw_query", "body"] {
         if let Some(value) = fixture["input"].get(key) {
@@ -180,6 +181,12 @@ fn check_evidence(bytes: &[u8], protected: &Scanner) -> Result<()> {
         .as_array()
         .context("missing exchanges")?
     {
+        if let Some((_, query)) = exchange["request"]["url"]
+            .as_str()
+            .and_then(|url| url.split_once('?'))
+        {
+            check_fields(query.as_bytes())?;
+        }
         check_wire(&exchange["request"]["body"])?;
         if let Some(response) = exchange.get("response") {
             check_wire(&response["body"])?;
@@ -307,6 +314,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn evidence_rejects_form_encoded_credentials_in_request_urls_and_bodies() {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let key = format!("{} &=%é", hex(&random));
+        let mut scan = Scanner::default();
+        scan.add(key.as_bytes());
+        let fixture: Value = serde_json::from_slice(include_bytes!(
+            "../../../guest/plugins/sim_form_md5/fixtures/create_payment_success.json"
+        ))
+        .unwrap();
+        for value in [
+            form::query_escape(key.as_bytes()),
+            form::query_escape(key.as_bytes()).replace("%3D", "%3d"),
+        ] {
+            let mut f = fixture.clone();
+            f["exchanges"][0]["request"]["url"] =
+                json!(format!("https://example.test/?key={value}"));
+            assert!(check_evidence(&serde_json::to_vec(&f).unwrap(), &scan).is_err());
+            let mut f = fixture.clone();
+            f["exchanges"][0]["request"]["body"] =
+                json!(BASE64_STANDARD.encode(format!("key={value}")));
+            assert!(check_evidence(&serde_json::to_vec(&f).unwrap(), &scan).is_err());
+        }
+    }
     #[test]
     fn evidence_rejects_raw_hex_base64_and_embedded_callback_secrets() {
         let mut secret = [0; 24];

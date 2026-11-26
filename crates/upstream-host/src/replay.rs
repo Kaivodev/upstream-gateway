@@ -378,20 +378,38 @@ fn resign(
     Ok(())
 }
 pub fn normalized(r: &HttpRequest) -> Value {
+    normalized_exchange(r, r)
+}
+/// Project either side of the template/wire pair. A substituted field can
+/// itself be named "sign". Only a separate signature gets the replay marker.
+pub fn normalized_exchange(r: &HttpRequest, other: &HttpRequest) -> Value {
+    let substituted = r.url != other.url || r.body != other.body;
     let mut r = r.clone();
     for (n, v) in &mut r.headers {
         if n.eq_ignore_ascii_case("X-Signature") {
             *v = vec![MARK.into()]
         }
     }
-    if http::values(&r.headers, "Content-Type")
-        .first()
-        .is_some_and(|s| s.starts_with("application/x-www-form-urlencoded"))
+    let types = http::values(&r.headers, "Content-Type");
+    let form_body = if substituted {
+        matches!(types, [s] if crate::package::media(s).as_deref() == Some("application/x-www-form-urlencoded"))
+    } else {
+        types
+            .first()
+            .is_some_and(|s| s.starts_with("application/x-www-form-urlencoded"))
+    };
+    if form_body
         && let Some(mut v) = form::parse(&r.body)
-        && v.contains_key(b"sign".as_slice())
+        && let Some(sign) = v.get(b"sign".as_slice())
     {
-        form::set(&mut v, "sign", MARK);
-        r.body = form::encode(&v).into_bytes()
+        if !substituted {
+            form::set(&mut v, "sign", MARK);
+            r.body = form::encode_bytes(&v);
+        } else if form::parse(&other.body).is_some_and(|f| f.get(b"sign".as_slice()) == Some(sign))
+            && let Some(masked) = query::mask_form_signature(&r.body)
+        {
+            r.body = masked;
+        }
     }
     request_value(&r)
 }
@@ -434,7 +452,7 @@ impl Environment for Recorded {
 impl Transport for Recorded {
     fn send(
         &self,
-        _: &HttpRequest,
+        template: &HttpRequest,
         r: &HttpRequest,
         _: Instant,
         _: &Cancellation,
@@ -446,16 +464,25 @@ impl Transport for Recorded {
             pos.1 = true;
             bail!("unexpected request")
         };
-        let h = x.request.headers.clone().into_iter().collect();
-        let h = http::expand(&self.m, &h, |n| {
-            String::from_utf8(self.keys.shared(n).ok()?.to_vec()).ok()
-        });
-        let Ok(h) = h else {
-            pos.1 = true;
-            bail!("invalid recorded headers")
+        let recorded = HttpRequest {
+            method: x.request.method.clone(),
+            url: x.request.url.clone(),
+            headers: x.request.headers.clone().into_iter().collect(),
+            body: BASE64_STANDARD.decode(&x.request.body)?,
         };
-        let expected = json!({"method":x.request.method,"url":x.request.url,"headers":headers_value(&h),"body":x.request.body});
-        if normalized(r) != expected {
+        // The actual wire body already passed the host limit. A signature marker
+        // can make the recorded comparison projection longer than that body.
+        let Ok(expected) =
+            http::RequestTemplate::validate(&self.m, &recorded, true).and_then(|t| {
+                t.expand(http::REQUEST_BODY_LIMIT + MARK.len() + 1, |n| {
+                    self.keys.shared(n).ok()
+                })
+            })
+        else {
+            pos.1 = true;
+            bail!("invalid recorded request template")
+        };
+        if normalized_exchange(r, template) != request_value(&expected) {
             pos.1 = true;
             bail!("recorded request mismatch")
         }
@@ -654,6 +681,69 @@ mod tests {
                     .to_string(),
                 "invalid re-sign credentials"
             );
+        }
+    }
+    #[test]
+    fn recorded_fields_expand_with_the_replay_key_and_match_other_bytes_exactly() {
+        let mut v = crate::tests::manifest();
+        v["secret_fields"] = json!({"query":["key"],"form":["key", "sign"]});
+        let m = Arc::new(Manifest::parse(&json::canonical(&v)).unwrap());
+        let keys = Arc::new(Ephemeral::new(&m).unwrap());
+        let encoded = form::query_escape(&keys.shared("shared").unwrap());
+        for (name, suffix) in [
+            ("%6bey", ""),
+            ("%6bey", "&%73ign=signature"),
+            ("%73ign", ""),
+        ] {
+            let mut template = HttpRequest {
+                method: "POST".into(),
+                url: "https://example.test/?x=%2f&key={{secret:shared}}".into(),
+                headers: vec![(
+                    "Content-Type".into(),
+                    vec!["application/x-www-form-urlencoded".into()],
+                )],
+                body: format!("{name}=%7B%7Bsecret%3Ashared%7D%7D&x=+%20{suffix}").into_bytes(),
+            };
+            let mut wire = template.clone();
+            wire.url = format!("https://example.test/?x=%2f&key={encoded}");
+            wire.body = format!("{name}={encoded}&x=+%20{suffix}").into_bytes();
+            if !suffix.is_empty() {
+                let padding = format!(
+                    "&pad={}",
+                    "x".repeat(http::REQUEST_BODY_LIMIT - wire.body.len() - 5)
+                );
+                wire.body.extend_from_slice(padding.as_bytes());
+                template.body.extend_from_slice(padding.as_bytes());
+            }
+            let mut f = Fixture::decode(include_bytes!(
+                "../../../guest/plugins/sim_form_md5/fixtures/query_payment_success.json"
+            ))
+            .unwrap();
+            let recording = normalized_exchange(&template, &wire);
+            let expected_body = String::from_utf8(template.body.clone())
+                .unwrap()
+                .replace("=signature", &format!("={MARK}"));
+            assert!(recording["body"] == BASE64_STANDARD.encode(expected_body));
+            f.exchanges[0].request = serde_json::from_value(recording).unwrap();
+            let env = Recorded {
+                m: m.clone(),
+                f,
+                keys: keys.clone(),
+                random: Mutex::new(SeedStream::new([0; 32])),
+                clock: (0, 0),
+                position: Mutex::default(),
+                signatures: Mutex::default(),
+            };
+            let send = |r: &HttpRequest| {
+                *env.position.lock().unwrap() = (0, false);
+                env.send(&template, r, Instant::now(), &Cancellation::default())
+            };
+            assert!(send(&wire).is_ok());
+            let mut changed = wire.clone();
+            changed.url = changed.url.replace("%2f", "%2F");
+            assert!(send(&changed).is_err());
+            wire.body.push(b'&');
+            assert!(send(&wire).is_err());
         }
     }
     #[test]

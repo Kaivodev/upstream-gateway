@@ -6,8 +6,44 @@ use std::{collections::BTreeMap, ops::Range};
 pub struct SignedQuery<'a> {
     raw: &'a [u8],
     pub(super) fields: BTreeMap<Vec<u8>, Vec<u8>>,
-    signature: Range<usize>,
+    signature: WireValue,
+}
+
+struct WireValue {
+    range: Range<usize>,
     needs_equals: bool,
+}
+
+impl WireValue {
+    fn at(offset: usize, pair: &[u8]) -> Self {
+        let equals = pair.iter().position(|&b| b == b'=');
+        let start = equals.map_or(pair.len(), |i| i + 1);
+        Self {
+            range: offset + start..offset + pair.len(),
+            needs_equals: equals.is_none(),
+        }
+    }
+    fn replace(&self, raw: &[u8], value: &str) -> Vec<u8> {
+        let mut result = raw[..self.range.start].to_vec();
+        if self.needs_equals {
+            result.push(b'=');
+        }
+        result.extend_from_slice(value.as_bytes());
+        result.extend_from_slice(&raw[self.range.end..]);
+        result
+    }
+}
+
+// Mask a signature without canonicalizing the surrounding form bytes.
+pub(super) fn mask_form_signature(raw: &[u8]) -> Option<Vec<u8>> {
+    let mut offset = 0;
+    for pair in raw.split(|&b| b == b'&') {
+        if form::parse(pair)?.contains_key(b"sign".as_slice()) {
+            return Some(WireValue::at(offset, pair).replace(raw, super::MARK));
+        }
+        offset += pair.len() + 1;
+    }
+    None
 }
 
 impl<'a> SignedQuery<'a> {
@@ -21,9 +57,7 @@ impl<'a> SignedQuery<'a> {
                 .context("invalid callback query")?;
             ensure!(!key.is_empty(), "empty callback key");
             if key == b"sign" {
-                let equals = part.iter().position(|&b| b == b'=');
-                let start = equals.map_or(part.len(), |n| n + 1);
-                signature = Some((offset + start..offset + part.len(), equals.is_none()));
+                signature = Some(WireValue::at(offset, part));
             }
             ensure!(
                 fields.insert(key, values.pop().unwrap()).is_none(),
@@ -31,12 +65,10 @@ impl<'a> SignedQuery<'a> {
             );
             offset += part.len() + 1;
         }
-        let (signature, needs_equals) = signature.context("missing callback signature")?;
         Ok(Self {
             raw,
             fields,
-            signature,
-            needs_equals,
+            signature: signature.context("missing callback signature")?,
         })
     }
 
@@ -45,12 +77,6 @@ impl<'a> SignedQuery<'a> {
     }
 
     pub fn replace_signature(&self, replacement: &str) -> Vec<u8> {
-        let mut query = self.raw[..self.signature.start].to_vec();
-        if self.needs_equals {
-            query.push(b'=');
-        }
-        query.extend_from_slice(replacement.as_bytes());
-        query.extend_from_slice(&self.raw[self.signature.end..]);
-        query
+        self.signature.replace(self.raw, replacement)
     }
 }

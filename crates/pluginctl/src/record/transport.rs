@@ -11,7 +11,7 @@ use std::{
 };
 use upstream_host::{
     environment::{Cancellation, Incoming, Transport},
-    replay::{SignedQuery, normalized},
+    replay::{SignedQuery, normalized_exchange},
     types::HttpRequest,
 };
 
@@ -55,7 +55,9 @@ impl Transport for CaptureTransport {
         deadline: Instant,
         cancel: &Cancellation,
     ) -> Result<Incoming> {
-        let mut exchange = json!({"request": normalized(template)});
+        // Record the header, query and form templates. Only the simulator receives
+        // the expanded request, even when transport fails.
+        let mut exchange = json!({"request": normalized_exchange(template, request)});
         let result = self.post(
             request,
             deadline.min(Instant::now() + Duration::from_secs(2)),
@@ -97,6 +99,7 @@ mod tests {
         net::TcpListener,
         thread,
     };
+    use upstream_host::replay::{MARK, normalized};
     fn transport(origin: &str) -> CaptureTransport {
         CaptureTransport {
             sim: Simulator::parse(origin).unwrap(),
@@ -140,11 +143,19 @@ mod tests {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let t = transport(&origin);
-        let r = request(format!("{origin}/mapi.php"));
+        let mut template = request(format!("{origin}/mapi.php?key={{{{secret:shared}}}}"));
+        template.body.extend_from_slice(b"&key={{secret:shared}}");
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let value = upstream_host::package::hex(&random);
+        let mut r = request(format!("{origin}/mapi.php?key={value}"));
+        r.body.extend_from_slice(format!("&key={value}").as_bytes());
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(&stream);
             let mut length = None;
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
             for line in reader.by_ref().lines() {
                 let line = line.unwrap();
                 if line.is_empty() {
@@ -159,21 +170,33 @@ mod tests {
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
                 .unwrap();
-            body
+            (request_line, body)
         });
         let _ = t
             .send(
-                &r,
+                &template,
                 &r,
                 Instant::now() + Duration::from_secs(2),
                 &Cancellation::default(),
             )
             .unwrap();
-        assert_eq!(
-            server.join().unwrap(),
-            b"z=a%2fb&%73ign=00000000000000000000000000000000&type=alipay"
+        let (line, body) = server.join().unwrap();
+        assert!(line == format!("POST /mapi.php?key={value} HTTP/1.1\r\n"));
+        assert!(
+            body == format!(
+                "z=a%2fb&%73ign=00000000000000000000000000000000&type=alipay&key={value}"
+            )
+            .as_bytes()
         );
-        assert_eq!(t.exchanges.lock().unwrap()[0]["request"], normalized(&r));
+        let captured = &t.exchanges.lock().unwrap()[0]["request"];
+        assert!(captured["url"] == template.url);
+        let body = BASE64_STANDARD
+            .decode(captured["body"].as_str().unwrap())
+            .unwrap();
+        assert!(
+            body == format!("z=a%2fb&%73ign={MARK}&type=alipay&key={{{{secret:shared}}}}")
+                .as_bytes()
+        );
     }
 
     #[test]
