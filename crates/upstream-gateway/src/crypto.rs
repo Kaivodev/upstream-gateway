@@ -18,7 +18,10 @@ pub trait Kms: Send + Sync {
         false
     }
 }
-pub struct LocalKms(Zeroizing<[u8; 32]>);
+pub struct LocalKms {
+    key: Zeroizing<[u8; 32]>,
+    development_only: bool,
+}
 impl LocalKms {
     pub fn from_file(mode: Mode, path: &Path) -> anyhow::Result<Self> {
         anyhow::ensure!(
@@ -33,13 +36,25 @@ impl LocalKms {
         );
         let mut key = Zeroizing::new([0; 32]);
         file.read_exact(key.as_mut())?;
-        Ok(Self(key))
+        Ok(Self {
+            key,
+            development_only: true,
+        })
+    }
+    pub(crate) fn from_cloud_kms(key: Zeroizing<[u8; 32]>) -> Self {
+        Self {
+            key,
+            development_only: false,
+        }
     }
     #[cfg(test)]
     pub(crate) fn ephemeral() -> Self {
         let mut key = Zeroizing::new([0; 32]);
         getrandom::fill(key.as_mut()).unwrap();
-        Self(key)
+        Self {
+            key,
+            development_only: true,
+        }
     }
 }
 fn damaged() -> Status {
@@ -78,13 +93,13 @@ fn decrypt(key: &[u8], data: &[u8], aad: &[u8]) -> Result<Zeroizing<Vec<u8>>, St
 }
 impl Kms for LocalKms {
     fn wrap(&self, dek: &[u8], aad: &[u8]) -> Result<Vec<u8>, Status> {
-        encrypt(self.0.as_ref(), dek, aad)
+        encrypt(self.key.as_ref(), dek, aad)
     }
     fn unwrap(&self, data: &[u8], aad: &[u8]) -> Result<Zeroizing<Vec<u8>>, Status> {
-        decrypt(self.0.as_ref(), data, aad)
+        decrypt(self.key.as_ref(), data, aad)
     }
     fn development_only(&self) -> bool {
-        true
+        self.development_only
     }
 }
 #[derive(Clone)]

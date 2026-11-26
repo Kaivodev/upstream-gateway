@@ -204,7 +204,7 @@ handlers!(UpstreamAdminService, replay_package(ReplayPackageRequest)->ReplayPack
     register_package(RegisterPackageRequest)->RegisterPackageResponse,revoke_package(RevokePackageRequest)->RevokePackageResponse,
     store_credentials(StoreCredentialsRequest)->StoreCredentialsResponse,get_exchange(GetExchangeRequest)->GetExchangeResponse);
 
-struct Observer;
+pub(crate) struct Observer;
 impl Events for Observer {
     fn alert(&self, code: &'static str) {
         eprintln!("gateway event {code}");
@@ -212,6 +212,12 @@ impl Events for Observer {
     fn log(&self, _: &serde_json::Value) {}
     fn authentication_rejected(&self, reason: &'static str, method: &str) {
         eprintln!("gateway rejection {reason} {method}");
+    }
+    fn kms_failed(&self, event: &'static str, step: &'static str, status: Option<u16>) {
+        match status {
+            Some(status) => eprintln!("{event} step={step} status={status}"),
+            None => eprintln!("{event} step={step}"),
+        }
     }
     fn completion(&self, code: &'static str) {
         eprintln!("gateway completion {code}");
@@ -272,14 +278,13 @@ pub async fn run(path: &Path) -> Result<()> {
         )?)),
         _ => anyhow::bail!("invalid authentication settings for transport"),
     };
-    let kms = LocalKms::from_file(
-        mode,
-        config
-            .local_kek_file
-            .as_deref()
-            .ok_or_else(|| anyhow!("missing KMS file"))?,
-    )
-    .map_err(|_| anyhow!("invalid KMS file"))?;
+    let kms = match (&config.kms, &config.local_kek_file) {
+        (Some(config_kms), None) => crate::kms::unwrap(config_kms, config.role, &Observer).await?,
+        (None, Some(file)) => {
+            LocalKms::from_file(mode, file).map_err(|_| anyhow!("invalid KMS file"))?
+        }
+        _ => anyhow::bail!("invalid KEK configuration"),
+    };
     let url = zeroize::Zeroizing::new(
         std::env::var(&config.database_url_env)
             .map_err(|_| anyhow!("missing database configuration"))?,
@@ -294,7 +299,7 @@ pub async fn run(path: &Path) -> Result<()> {
         }
         None => Egress::public_roots(),
     };
-    let transport = Egress::new(
+    let transport = Egress::with_proxy(
         tokio::runtime::Handle::current(),
         mode,
         config.egress_proxy,

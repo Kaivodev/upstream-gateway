@@ -18,6 +18,8 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 prost = "0.14"
 prost-reflect = "0.16"
 prost-types = "0.14"
+libc = "0.2"
+regex = { version = "1", default-features = false, features = ["std"] }
 ring = "0.17"
 num-bigint = "0.4"
 rsa = { version = "0.10", features = ["pkcs1v15"] }

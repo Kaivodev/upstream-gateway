@@ -168,10 +168,11 @@ async fn direct_tls_and_proxy_resolved_hostname() -> Result<()> {
             s.shutdown().await?;
             Ok::<_, anyhow::Error>(())
         });
-        let e = Egress::new(
+        let e = Egress::with_proxy(
             Handle::current(),
             dev(),
-            proxy_port.map(|_| addr),
+            proxy_port
+                .map(|_| ProxyAddress::try_from(format!("localhost:{}", addr.port())).unwrap()),
             roots.clone(),
         )?;
         let authority = match proxy_port {

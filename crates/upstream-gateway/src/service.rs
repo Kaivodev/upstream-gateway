@@ -46,6 +46,13 @@ pub trait Events: Send + Sync {
     fn authentication_rejected(&self, reason: &'static str, method: &str) {
         self.log(&serde_json::json!({"reason": reason, "method": method}));
     }
+    fn kms_failed(&self, event: &'static str, step: &'static str, status: Option<u16>) {
+        let mut record = serde_json::json!({"event": event, "step": step});
+        if let Some(status) = status {
+            record["status"] = status.into();
+        }
+        self.log(&record);
+    }
     fn completion(&self, code: &'static str) {
         self.log(&serde_json::json!({"event": "gateway_completion", "code": code}));
     }

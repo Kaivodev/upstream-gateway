@@ -4,13 +4,18 @@ transport = "plaintext"
 listen = "0.0.0.0:9107"
 allowed_peers = ["payment"]
 database_url_env = "GATEWAY_DATABASE_URL"
-local_kek_file = "replace-with-trade-kek-file"
 allow_loopback_http = false
 allow_private_http = true
 allow_uncommitted = false
 
+[kms]
+key = "projects/kaivokms/locations/asia-southeast1/keyRings/test-business/cryptoKeys/upstream-gateway-trade-kek"
+wrapped_key_file = "/run/kaivo/sealing/kek.json"
+credentials_file = "/etc/kaivo/gcp/credentials.json"
+egress_proxy = "gateway-egress.kaivo-business.svc:3128"
+
 [service_token]
-jwks_file = "/var/run/kaivo/issuer/jwks.json"
+jwks_file = "/run/kaivo/issuer/jwks.json"
 issuer = "https://kubernetes.default.svc.cluster.local"
 
 [service_token.service_namespaces]

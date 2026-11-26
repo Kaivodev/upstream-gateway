@@ -1,4 +1,4 @@
-use crate::{Mode, Role};
+use crate::{Mode, Role, egress::ProxyAddress, kms::KmsConfig};
 use anyhow::{Result, anyhow, ensure};
 use serde::Deserialize;
 use std::{
@@ -75,13 +75,14 @@ pub(crate) struct Config {
     pub service_token: Option<ServiceToken>,
     pub database_url_env: String,
     pub local_kek_file: Option<PathBuf>,
+    pub kms: Option<KmsConfig>,
     #[serde(default)]
     allow_loopback_http: bool,
     #[serde(default)]
     allow_private_http: bool,
     #[serde(default)]
     allow_uncommitted: bool,
-    pub egress_proxy: Option<SocketAddr>,
+    pub egress_proxy: Option<ProxyAddress>,
     pub egress_ca_file: Option<PathBuf>,
     #[serde(default)]
     pub timing: Timing,
@@ -142,12 +143,14 @@ impl Config {
             "invalid database environment reference"
         );
         let mode = match c.mode.as_str() {
-            "development" if c.local_kek_file.is_some() => Mode::Development {
+            "development" if c.local_kek_file.is_some() != c.kms.is_some() => Mode::Development {
                 allow_loopback_http: c.allow_loopback_http,
                 allow_private_http: c.allow_private_http,
                 allow_uncommitted: c.allow_uncommitted,
             },
-            "development" => anyhow::bail!("development KMS file required"),
+            "development" => {
+                anyhow::bail!("development requires exactly one of local_kek_file and [kms]")
+            }
             "production"
                 if c.allow_loopback_http
                     || c.allow_private_http
@@ -156,10 +159,20 @@ impl Config {
             {
                 anyhow::bail!("development settings in production")
             }
-            "production" => anyhow::bail!("production KMS unavailable"),
+            "production" if c.kms.is_some() => Mode::Production,
+            "production" => anyhow::bail!("[kms] required in production"),
             _ => anyhow::bail!("invalid gateway mode"),
         };
         let dir = path.parent().unwrap_or(Path::new("."));
+        if let Some(kms) = &mut c.kms {
+            kms.resolve(dir)?;
+            let wrapped = kms
+                .wrapped_key_file
+                .as_mut()
+                .filter(|p| !p.as_os_str().is_empty())
+                .ok_or_else(|| anyhow!("wrapped_key_file required"))?;
+            *wrapped = dir.join(&*wrapped);
+        }
         for value in c
             .tls
             .iter_mut()
@@ -220,7 +233,7 @@ mod tests {
             ("allow_loopback_http", "development settings in production"),
             ("allow_uncommitted", "development settings in production"),
             ("allow_private_http", "development settings in production"),
-            ("unused", "production KMS unavailable"),
+            ("unused", "[kms] required in production"),
         ] {
             std::fs::write(
                 &path,
@@ -233,6 +246,78 @@ mod tests {
 
     const KUBE: &str = include_str!("../../../config/kubernetes.example.toml");
     #[test]
+    fn startup_selects_exactly_one_kek_source_for_the_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config");
+        let parse = |text: String| {
+            std::fs::write(&path, text).unwrap();
+            Config::read(&path)
+        };
+        let no_key = TEMPLATE
+            .lines()
+            .filter(|l| !l.starts_with("local_kek_file"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let kms = "\n[kms]\nkey='projects/p/locations/l/keyRings/r/cryptoKeys/k'\ncredentials_file='gcp/config'\nwrapped_key_file='kek.json'\n";
+        for mode in ["development", "production"] {
+            let base = no_key.replace("development", mode);
+            assert!(parse(base.clone()).is_err());
+            assert!(parse(format!("{}{kms}", TEMPLATE.replace("development", mode))).is_err());
+            let (config, selected_mode) = parse(format!("{base}{kms}")).unwrap();
+            assert_eq!(
+                matches!(selected_mode, Mode::Production),
+                mode == "production"
+            );
+            assert_eq!(
+                config.kms.unwrap().wrapped_key_file.unwrap(),
+                dir.path().join("kek.json")
+            );
+            assert!(
+                parse(format!(
+                    "{base}{}",
+                    kms.replace("wrapped_key_file='kek.json'", "")
+                ))
+                .is_err()
+            );
+        }
+        for key in [
+            "projects/p/locations/l/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1",
+            "projects/p/locations//keyRings/r/cryptoKeys/k",
+            "projects/p/locations/l/keyRings/r/cryptoKeys/k?",
+            "/projects/p/locations/l/keyRings/r/cryptoKeys/k",
+            "projects/p/locations/l/keyRings/r/cryptoKeys/k.x",
+        ] {
+            assert!(
+                parse(format!(
+                    "{no_key}{}",
+                    kms.replace("projects/p/locations/l/keyRings/r/cryptoKeys/k", key)
+                ))
+                .is_err()
+            );
+        }
+        for (address, valid) in [
+            ("gateway-egress.kaivo-business.svc:3128", true),
+            ("127.0.0.1:1", true),
+            ("[::1]:65535", true),
+            ("gateway:3128", true),
+            ("host", false),
+            (":80", false),
+            ("host:0", false),
+            ("host:65536", false),
+            ("https://host:443", false),
+            ("user@host:80", false),
+            ("bad..host:80", false),
+            ("::1:80", false),
+            ("[no-ip]:80", false),
+            ("-bad:3128", false),
+        ] {
+            let field = format!("egress_proxy='{address}'\n");
+            assert_eq!(parse(format!("{field}{TEMPLATE}")).is_ok(), valid);
+            assert_eq!(parse(format!("{no_key}{kms}{field}")).is_ok(), valid);
+        }
+    }
+
+    #[test]
     fn plaintext_settings_match_transport_and_role() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config");
@@ -242,7 +327,7 @@ mod tests {
         };
         let (config, mode) = parse(KUBE).unwrap();
         assert!(matches!(config.transport, Transport::Plaintext) && mode.allow_http());
-        let absolute = "/var/run/kaivo/issuer/jwks.json";
+        let absolute = "/run/kaivo/issuer/jwks.json";
         assert_eq!(config.service_token.unwrap().jwks_file, Path::new(absolute));
         let (config, _) = parse(&KUBE.replace(absolute, "issuer/jwks.json")).unwrap();
         assert_eq!(

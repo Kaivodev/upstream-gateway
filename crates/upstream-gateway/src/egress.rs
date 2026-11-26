@@ -30,12 +30,12 @@ const BODY_LIMIT: usize = 256 << 10;
 pub struct Egress {
     runtime: Handle,
     mode: Mode,
-    proxy: Option<SocketAddr>,
+    proxy: Option<ProxyAddress>,
     tls: TlsConnector,
 }
-trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
-type Socket = Box<dyn Stream>;
+pub(crate) type Socket = Box<dyn Stream>;
 
 fn public(ip: IpAddr) -> bool {
     match ip {
@@ -86,7 +86,7 @@ fn direct_target(addresses: &[SocketAddr], tls: bool, mode: Mode) -> Result<Sock
     );
     Ok(target)
 }
-struct Driver(JoinHandle<()>);
+pub(crate) struct Driver(JoinHandle<()>);
 impl Drop for Driver {
     fn drop(&mut self) {
         self.0.abort()
@@ -116,7 +116,7 @@ async fn bounded<T>(
     }
 }
 
-async fn request(
+pub(crate) async fn request(
     socket: Socket,
     req: Request<Full<Bytes>>,
     upgrade: bool,
@@ -136,6 +136,62 @@ async fn request(
     let response = sender.send_request(req).await?;
     Ok((response, driver))
 }
+/// A trusted CONNECT proxy. DNS is resolved anew for each connection.
+#[derive(Clone, serde::Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct ProxyAddress(String);
+
+impl From<SocketAddr> for ProxyAddress {
+    fn from(address: SocketAddr) -> Self {
+        Self(address.to_string())
+    }
+}
+
+impl TryFrom<String> for ProxyAddress {
+    type Error = &'static str;
+
+    fn try_from(address: String) -> Result<Self, Self::Error> {
+        let invalid = "invalid proxy host:port";
+        let (host, port) = address.rsplit_once(':').ok_or(invalid)?;
+        if !port.bytes().all(|b| b.is_ascii_digit()) || !matches!(port.parse::<u16>(), Ok(1..)) {
+            return Err(invalid);
+        }
+        let dns = host.strip_suffix('.').unwrap_or(host);
+        if address.parse::<SocketAddr>().is_err()
+            && !upstream_host::package::domain(&dns.to_ascii_lowercase())
+        {
+            return Err(invalid);
+        }
+        Ok(Self(address))
+    }
+}
+
+impl ProxyAddress {
+    pub(crate) async fn tunnel(&self, host: &str, port: u16) -> Result<Socket> {
+        let stream = Box::new(TcpStream::connect(self.0.as_str()).await?);
+        let target = format!("{host}:{port}");
+        let connect = Request::connect(target.as_str())
+            .header("host", &target)
+            .body(Full::new(Bytes::new()))?;
+        let (mut response, _driver) = request(stream, connect, true).await?;
+        if !response.status().is_success() {
+            return Err(anyhow::Error::msg(response.status()).context("proxy refused tunnel"));
+        }
+        Ok(Box::new(TokioIo::new(
+            hyper::upgrade::on(&mut response).await?,
+        )))
+    }
+}
+
+pub(crate) fn tls_connector(roots: RootCertStore) -> Result<TlsConnector> {
+    ensure!(!roots.is_empty(), "empty upstream trust store");
+    let tls =
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+    Ok(TlsConnector::from(Arc::new(tls)))
+}
 impl Egress {
     pub fn new(
         runtime: Handle,
@@ -143,17 +199,20 @@ impl Egress {
         proxy: Option<SocketAddr>,
         roots: RootCertStore,
     ) -> Result<Self> {
-        ensure!(!roots.is_empty(), "empty upstream trust store");
-        let tls =
-            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()?
-                .with_root_certificates(roots)
-                .with_no_client_auth();
+        Self::with_proxy(runtime, mode, proxy.map(ProxyAddress::from), roots)
+    }
+    pub(crate) fn with_proxy(
+        runtime: Handle,
+        mode: Mode,
+        proxy: Option<ProxyAddress>,
+        roots: RootCertStore,
+    ) -> Result<Self> {
+        let tls = tls_connector(roots)?;
         Ok(Self {
             runtime,
             mode,
             proxy,
-            tls: TlsConnector::from(Arc::new(tls)),
+            tls,
         })
     }
     pub fn public_roots() -> RootCertStore {
@@ -165,15 +224,8 @@ impl Egress {
         let uri: Uri = r.url.parse()?;
         let tls = uri.scheme_str() == Some("https");
         let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
-        let mut stream: Socket = if let Some(proxy) = self.proxy {
-            let stream = Box::new(TcpStream::connect(proxy).await?);
-            let target = format!("{host}:{port}");
-            let connect = Request::connect(target.as_str())
-                .header("host", &target)
-                .body(Full::new(Bytes::new()))?;
-            let (mut response, _driver) = request(stream, connect, true).await?;
-            ensure!(response.status().is_success(), "proxy refused tunnel");
-            Box::new(TokioIo::new(hyper::upgrade::on(&mut response).await?))
+        let mut stream: Socket = if let Some(proxy) = &self.proxy {
+            proxy.tunnel(host, port).await?
         } else {
             let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
             Box::new(TcpStream::connect(direct_target(&addresses, tls, self.mode)?).await?)

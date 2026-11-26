@@ -72,6 +72,8 @@ impl Mode {
 
 mod config;
 mod health;
+mod kms;
+pub use kms::wrap_kek;
 mod server;
 mod service_token;
 mod tls;
