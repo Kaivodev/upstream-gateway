@@ -5,6 +5,7 @@ allowed_peers = ["payment"]
 database_url_env = "GATEWAY_DATABASE_URL"
 local_kek_file = "replace-with-trade-kek-file"
 allow_loopback_http = false
+allow_private_http = false
 allow_uncommitted = false
 
 [tls]

@@ -1,11 +1,12 @@
 {
   "type": "verification",
   "code": "epay_v1_verify",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "abi_version": 3,
   "domains": [
     "127.0.0.1",
-    "niuniuapi.qihongmy.cn"
+    "niuniuapi.qihongmy.cn",
+    "upstream-sim.kaivo-sim.svc.cluster.local"
   ],
   "secrets": {
     "merchant_key": "shared"

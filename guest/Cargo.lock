@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "epay_v1"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "epay-v1-protocol",
  "kaivo-upstream-sdk",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "epay_v1_verify"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "epay-v1-protocol",
  "kaivo-upstream-sdk",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "sim_form_md5"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "kaivo-upstream-sdk",
  "sim-form-md5-protocol",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "sim_form_md5_verify"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "kaivo-upstream-sdk",
  "sim-form-md5-protocol",
@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "sim_json_rsa"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "kaivo-upstream-sdk",
  "sim-json-rsa-protocol",
@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "sim_json_rsa_verify"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "kaivo-upstream-sdk",
  "sim-json-rsa-protocol",

@@ -5,9 +5,11 @@ use crate::{
         upstream_service_server::{UpstreamService, UpstreamServiceServer},
         *,
     },
-    config::Config,
+    config::{Config, Tls},
     crypto::LocalKms,
     egress::Egress,
+    health::{Health, Lifecycle, health_server::HealthServer},
+    service_token::{HEADER, Verifier},
     tls::{Material, Peer},
     wire::{DESCRIPTORS, MESSAGE_LIMIT},
 };
@@ -18,10 +20,7 @@ use prost_reflect::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, LazyLock},
     task::{Context, Poll},
     time::Duration,
 };
@@ -119,8 +118,9 @@ fn budget(value: Option<&hyper::header::HeaderValue>) -> Result<Duration, Status
 #[derive(Clone)]
 struct Boundary<S> {
     inner: S,
-    gateway: Gateway,
-    draining: Arc<AtomicBool>,
+    lifecycle: watch::Receiver<Lifecycle>,
+    verifier: Option<Arc<Verifier>>,
+    events: Arc<dyn Events>,
 }
 impl<S, B> Service<HttpRequest<B>> for Boundary<S>
 where
@@ -135,28 +135,50 @@ where
         self.inner.poll_ready(cx)
     }
     fn call(&mut self, mut req: HttpRequest<B>) -> Self::Future {
+        let health = req.uri().path().starts_with("/grpc.health.v1.Health/");
+        let token = self
+            .verifier
+            .as_ref()
+            .filter(|_| !health)
+            .map(|verifier| verifier.authenticate(req.headers()));
+        req.headers_mut().remove(HEADER);
         let authorize = || {
-            if self.gateway.needs_restart() || self.draining.load(Ordering::Acquire) {
+            let token_peer = token.transpose().map_err(|reason| {
+                self.events
+                    .authentication_rejected(reason, req.uri().path());
+                Status::unauthenticated("service authentication required")
+            })?;
+            if !health && *self.lifecycle.borrow() != Lifecycle::Serving {
                 return Err(Status::unavailable("executor draining"));
             }
-            let peer = req
-                .extensions()
-                .get::<Peer>()
-                .ok_or_else(|| Status::unauthenticated("missing peer"))?;
             if req.headers().contains_key("x-aipay-assertion") {
                 return Err(Status::unauthenticated("unexpected assertion"));
             }
+            if health {
+                return Ok(None);
+            }
+            let peer = token_peer
+                .as_ref()
+                .or_else(|| req.extensions().get::<Peer>())
+                .ok_or_else(|| Status::unauthenticated("missing peer"))?;
             if !POLICIES
                 .get(req.uri().path())
                 .is_some_and(|p| p.contains(peer.name()))
             {
                 return Err(Status::permission_denied("method denied"));
             }
-            Ok(peer.caller(budget(req.headers().get("grpc-timeout"))?))
+            Ok(Some(
+                peer.caller(budget(req.headers().get("grpc-timeout"))?),
+            ))
         };
         match authorize() {
             Ok(caller) => {
-                req.extensions_mut().insert(caller);
+                if let Some(caller) = caller {
+                    req.extensions_mut().insert(caller);
+                } else {
+                    req.headers_mut().remove("x-request-id");
+                    req.headers_mut().remove("x-trace-id");
+                }
                 Box::pin(self.inner.call(req))
             }
             Err(status) => Box::pin(async move { Ok(status.into_http()) }),
@@ -188,14 +210,68 @@ impl Events for Observer {
         eprintln!("gateway event {code}");
     }
     fn log(&self, _: &serde_json::Value) {}
+    fn authentication_rejected(&self, reason: &'static str, method: &str) {
+        eprintln!("gateway rejection {reason} {method}");
+    }
     fn completion(&self, code: &'static str) {
         eprintln!("gateway completion {code}");
     }
 }
+enum Identity {
+    Mtls(Tls, watch::Sender<Material>),
+    Plaintext(Arc<Verifier>),
+}
+impl Identity {
+    fn server(&self) -> Server {
+        let builder = Server::builder();
+        match self {
+            Self::Mtls(..) => builder,
+            // Room for a 64 KiB token plus ordinary gRPC metadata, so the verifier
+            // (not the HTTP/2 layer) classifies oversized tokens. Callers are
+            // limited by NetworkPolicy; keep the per-request header memory bounded.
+            Self::Plaintext(_) => builder.http2_max_header_list_size(128 << 10),
+        }
+    }
+
+    async fn watch(self, role: crate::Role, events: Arc<dyn Events>) {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            match &self {
+                Self::Mtls(config, material) => {
+                    let next = material.borrow().reload(config, role);
+                    match next {
+                        Ok(Some(new)) => {
+                            material.send_replace(new);
+                        }
+                        Ok(None) => (),
+                        Err(_) => events.alert("tls_reload_rejected"),
+                    }
+                }
+                Self::Plaintext(verifier) => {
+                    if verifier.reload().is_err() {
+                        events.alert("service_token_keys_reload_rejected");
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub async fn run(path: &Path) -> Result<()> {
     let (config, mode) = Config::read(path)?;
-    let tls = Material::load(&config.tls, config.role)
-        .map_err(|_| anyhow!("invalid TLS material or service identity"))?;
+    let identity = match (config.tls, config.service_token) {
+        (Some(tls), None) => {
+            let material = Material::load(&tls, config.role)
+                .map_err(|_| anyhow!("invalid TLS material or service identity"))?;
+            Identity::Mtls(tls, watch::channel(material).0)
+        }
+        (None, Some(config_token)) => Identity::Plaintext(Arc::new(Verifier::load(
+            config_token,
+            config.role,
+            config.allowed_peers,
+        )?)),
+        _ => anyhow::bail!("invalid authentication settings for transport"),
+    };
     let kms = LocalKms::from_file(
         mode,
         config
@@ -239,47 +315,26 @@ pub async fn run(path: &Path) -> Result<()> {
     let listener = TcpListener::bind(config.listen)
         .await
         .map_err(|_| anyhow!("cannot bind gateway listener"))?;
-    let (material, current) = watch::channel(tls);
-    let reload = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            let next = material.borrow().reload(&config.tls, config.role);
-            match next {
-                Ok(None) => (),
-                Ok(Some(new)) => {
-                    if material.send(new).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => eprintln!("gateway event tls_reload_rejected"),
-            }
-        }
-    });
-    let incoming = TcpListenerStream::new(listener)
-        .map(move |socket| {
-            let material = current.borrow().clone();
-            async move {
-                match socket {
-                    Ok(socket) => material.handshake(socket).await.ok().map(Ok),
-                    Err(e) => Some(Err(e)),
-                }
-            }
-        })
-        .buffer_unordered(64)
-        .filter_map(std::future::ready);
-    let draining = Arc::new(AtomicBool::new(false));
+    let lifecycle = gateway.0.lifecycle.subscribe();
+    let verifier = match &identity {
+        Identity::Plaintext(v) => Some(v.clone()),
+        Identity::Mtls(..) => None,
+    };
     let boundary = {
-        let gateway = gateway.clone();
-        let draining = draining.clone();
+        let lifecycle = lifecycle.clone();
+        let events = gateway.0.events.clone();
         tower::layer::layer_fn(move |inner| Boundary {
             inner,
-            gateway: gateway.clone(),
-            draining: draining.clone(),
+            lifecycle: lifecycle.clone(),
+            verifier: verifier.clone(),
+            events: events.clone(),
         })
     };
     let (stop, stopped) = tokio::sync::oneshot::channel();
-    let server = Server::builder()
+    let router = identity
+        .server()
         .layer(boundary)
+        .add_service(HealthServer::new(Health(lifecycle.clone())))
         .add_service(
             UpstreamServiceServer::new(gateway.clone())
                 .max_decoding_message_size(MESSAGE_LIMIT)
@@ -289,24 +344,52 @@ pub async fn run(path: &Path) -> Result<()> {
             UpstreamAdminServiceServer::new(gateway.clone())
                 .max_decoding_message_size(MESSAGE_LIMIT)
                 .max_encoding_message_size(MESSAGE_LIMIT),
-        )
-        .serve_with_incoming_shutdown(Box::pin(incoming), async {
-            let _ = stopped.await;
-        });
+        );
+    let shutdown = async {
+        let _ = stopped.await;
+    };
+    use futures_util::future::Either;
+    let server = match &identity {
+        Identity::Mtls(_, material) => {
+            let current = material.subscribe();
+            let incoming = TcpListenerStream::new(listener)
+                .map(move |socket| {
+                    let material = current.borrow().clone();
+                    async move {
+                        match socket {
+                            Ok(socket) => material.handshake(socket).await.ok().map(Ok),
+                            Err(e) => Some(Err(e)),
+                        }
+                    }
+                })
+                .buffer_unordered(64)
+                .filter_map(std::future::ready);
+            Either::Left(router.serve_with_incoming_shutdown(Box::pin(incoming), shutdown))
+        }
+        Identity::Plaintext(_) => Either::Right(
+            router.serve_with_incoming_shutdown(TcpListenerStream::new(listener), shutdown),
+        ),
+    };
+    let mut reload = tokio::task::JoinSet::new();
+    reload.spawn(identity.watch(config.role, gateway.0.events.clone()));
     tokio::pin!(server);
     let mut workers = gateway.0.workers.subscribe();
-    let retiring = async {
-        while !gateway.needs_restart() {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-    };
+    let mut retiring = lifecycle;
     tokio::select! {
-        _ = term.recv() => (), _ = interrupt.recv() => (), _ = retiring => (),
+        _ = term.recv() => (), _ = interrupt.recv() => (),
+        _ = retiring.wait_for(|v| *v == Lifecycle::RestartRequired) => (),
         res = &mut server => { res?; anyhow::bail!("gateway listener stopped"); }
     }
-    draining.store(true, Ordering::Release);
+    gateway.0.lifecycle.send_if_modified(|state| {
+        if *state == Lifecycle::Serving {
+            *state = Lifecycle::Draining;
+            true
+        } else {
+            false
+        }
+    });
+    reload.abort_all();
     let _ = stop.send(());
-    reload.abort();
     tokio::time::timeout(DRAIN_BUDGET, async {
         server.await?;
         workers
@@ -326,3 +409,6 @@ pub async fn run(path: &Path) -> Result<()> {
     ensure!(!gateway.needs_restart(), "executor fenced");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

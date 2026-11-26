@@ -42,6 +42,7 @@ pub enum Mode {
     Production,
     Development {
         allow_loopback_http: bool,
+        allow_private_http: bool,
         allow_uncommitted: bool,
     },
 }
@@ -51,6 +52,9 @@ impl Mode {
             self,
             Self::Development {
                 allow_loopback_http: true,
+                ..
+            } | Self::Development {
+                allow_private_http: true,
                 ..
             }
         )
@@ -67,7 +71,9 @@ impl Mode {
 }
 
 mod config;
+mod health;
 mod server;
+mod service_token;
 mod tls;
 pub use server::run;
 pub use tls::VerifiedCaller;

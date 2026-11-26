@@ -272,22 +272,28 @@ fn raw_decoder_and_method_options() {
     assert!(methods.iter().all(|m| m.options().has_extension(&policy)));
 }
 #[test]
-fn http_secret_fields_follow_the_loopback_http_setting() {
+fn http_secret_fields_follow_the_development_http_settings() {
     for role in [Role::Trade, Role::Verification] {
         let production = Mode::Production.host_options(role);
         assert!(!production.test_only_allow_http_secret_fields);
         assert!(!production.test_only_allow_http);
-        for allow_loopback_http in [false, true] {
+        for (allow_loopback_http, allow_private_http) in
+            [(false, false), (false, true), (true, false), (true, true)]
+        {
             let development = Mode::Development {
                 allow_loopback_http,
+                allow_private_http,
                 allow_uncommitted: true,
             }
             .host_options(role);
             assert_eq!(
                 development.test_only_allow_http_secret_fields,
-                allow_loopback_http
+                allow_loopback_http || allow_private_http
             );
-            assert_eq!(development.test_only_allow_http, allow_loopback_http);
+            assert_eq!(
+                development.test_only_allow_http,
+                allow_loopback_http || allow_private_http
+            );
         }
     }
 }
@@ -300,6 +306,7 @@ fn local_kms_mode_permissions_and_aad() {
     file.write_all(&k).unwrap();
     let dev = Mode::Development {
         allow_loopback_http: false,
+        allow_private_http: false,
         allow_uncommitted: false,
     };
     assert!(crypto::LocalKms::from_file(Mode::Production, file.path()).is_err());

@@ -1,10 +1,11 @@
 {
   "type": "payment",
   "code": "sim_form_md5",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "abi_version": 3,
   "domains": [
-    "127.0.0.1"
+    "127.0.0.1",
+    "upstream-sim.kaivo-sim.svc.cluster.local"
   ],
   "secrets": {
     "shared": "shared"

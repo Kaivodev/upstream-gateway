@@ -1,0 +1,21 @@
+role = "trade"
+mode = "development"
+transport = "plaintext"
+listen = "0.0.0.0:9107"
+allowed_peers = ["payment"]
+database_url_env = "GATEWAY_DATABASE_URL"
+local_kek_file = "replace-with-trade-kek-file"
+allow_loopback_http = false
+allow_private_http = true
+allow_uncommitted = false
+
+[service_token]
+jwks_file = "/var/run/kaivo/issuer/jwks.json"
+issuer = "https://kubernetes.default.svc.cluster.local"
+
+[service_token.service_namespaces]
+payment = "kaivo-business"
+
+[timing]
+heartbeat_ms = 3000
+fence_ms = 30000

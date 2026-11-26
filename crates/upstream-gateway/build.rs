@@ -20,5 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(false)
         .build_transport(false)
         .compile_fds_with_config(compiler.file_descriptor_set(), config)?;
+    println!("cargo:rerun-if-changed=health.proto");
+    tonic_prost_build::configure()
+        .build_client(false)
+        .build_transport(false)
+        .compile_fds(protox::compile(["health.proto"], ["."])?)?;
     Ok(())
 }

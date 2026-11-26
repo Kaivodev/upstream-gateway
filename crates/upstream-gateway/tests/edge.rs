@@ -70,6 +70,7 @@ async fn tls_identity_and_rpc_policy() -> Result<()> {
     instances(&["trade", "verification"], async |both| {
         for i in both {
             let rpc = i.start().await?;
+            rpc.check_serving().await?;
             let other = if i.role == "trade" {
                 "reconciliation"
             } else {
@@ -639,6 +640,81 @@ async fn startup_checks_self_identity_before_storage() -> Result<()> {
                 .get::<_, bool>(0)
         );
         Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "starts a plaintext gateway with PostgreSQL"]
+async fn plaintext_service_account_and_native_health() -> Result<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use support::token::{ISSUER, Signer, claims};
+    use tonic::transport::Endpoint;
+    instances(&["trade"], async |instances| {
+        let i = &mut instances[0];
+        let signer = Signer::new();
+        let jwks = serde_json::json!({"keys":[signer.jwk()]});
+        std::fs::write(i.dir.path().join("jwks.json"), jwks.to_string())?;
+        let mut config: toml::Table = toml::from_str(&std::fs::read_to_string(i.config())?)?;
+        config.remove("tls");
+        config.insert("transport".into(), "plaintext".into());
+        config.insert(
+            "service_token".into(),
+            toml::toml! {
+                jwks_file = "jwks.json"
+                issuer = ISSUER
+                [service_namespaces]
+                payment = "kaivo-business"
+            }
+            .into(),
+        );
+        std::fs::write(i.config(), toml::to_string(&config)?)?;
+        i.spawn()?;
+        let endpoint = Endpoint::from_shared(format!("http://{}", i.addr))?;
+        let channel = tokio::time::timeout(Duration::from_secs(45), async {
+            loop {
+                if let Ok(channel) = endpoint.connect().await {
+                    break channel;
+                }
+                tokio::time::sleep(Duration::from_millis(30)).await;
+            }
+        })
+        .await?;
+        Rpc(channel.clone()).check_serving().await?;
+        let mut grpc = tonic::client::Grpc::new(channel);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+        let store = StoreCredentialsRequest {
+            idempotency_key: uid(),
+            channel_account_id: uid(),
+            channel_code: "sim_form_md5".into(),
+            credentials_json: serde_json::to_vec(&serde_json::json!({"shared": uid()}))?,
+        };
+        for role in ["verification", "trade"] {
+            let mut request = tonic::Request::new(store.clone());
+            let token = signer.token(&claims(role, "payment", now));
+            request
+                .metadata_mut()
+                .insert("x-kaivo-service-token", token.parse()?);
+            grpc.ready().await?;
+            let result: Result<tonic::Response<StoreCredentialsResponse>, _> = grpc
+                .unary(
+                    request,
+                    "/aipay.upstream.v1.UpstreamAdminService/StoreCredentials".parse()?,
+                    tonic_prost::ProstCodec::default(),
+                )
+                .await;
+            if role == "trade" {
+                ensure!(
+                    result?
+                        .get_ref()
+                        .credentials_ref
+                        .starts_with("payment:trade:")
+                );
+            } else {
+                ensure!(result.unwrap_err().code() == Code::Unauthenticated);
+            }
+        }
+        i.stop(true).await
     })
     .await
 }

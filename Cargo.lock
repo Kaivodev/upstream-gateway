@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "pluginctl"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2515,7 +2515,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "upstream-gateway"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2528,6 +2528,7 @@ dependencies = [
  "hyper-util",
  "kaivo-upstream-sdk",
  "md-5",
+ "num-bigint",
  "prost",
  "prost-reflect",
  "prost-types",
@@ -2558,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "upstream-host"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

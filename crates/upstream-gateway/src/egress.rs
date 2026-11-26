@@ -58,8 +58,33 @@ fn public(ip: IpAddr) -> bool {
         }
     }
 }
-fn allowed_address(ip: IpAddr, tls: bool, allow_loopback: bool) -> bool {
-    tls && public(ip) || allow_loopback && ip.is_loopback()
+fn allowed_address(ip: IpAddr, tls: bool, mode: Mode) -> bool {
+    if tls && public(ip) {
+        return true;
+    }
+    let Mode::Development {
+        allow_private_http,
+        allow_loopback_http,
+        ..
+    } = mode
+    else {
+        return false;
+    };
+    allow_loopback_http && ip.is_loopback()
+        || allow_private_http
+            && match ip {
+                IpAddr::V4(ip) => ip.is_private(),
+                IpAddr::V6(ip) => ip.is_unique_local(),
+            }
+}
+
+fn direct_target(addresses: &[SocketAddr], tls: bool, mode: Mode) -> Result<SocketAddr> {
+    let target = *addresses.first().context("no upstream address")?;
+    ensure!(
+        addresses.iter().all(|a| allowed_address(a.ip(), tls, mode)),
+        "forbidden address"
+    );
+    Ok(target)
 }
 struct Driver(JoinHandle<()>);
 impl Drop for Driver {
@@ -140,22 +165,19 @@ impl Egress {
         let uri: Uri = r.url.parse()?;
         let tls = uri.scheme_str() == Some("https");
         let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
-        let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
-        let target = *addresses.first().context("no upstream address")?;
-        ensure!(
-            addresses.iter().all(|a| allowed_address(a.ip(), tls, dev)),
-            "forbidden address"
-        );
-        let mut stream: Socket = Box::new(TcpStream::connect(self.proxy.unwrap_or(target)).await?);
-        if self.proxy.is_some() {
-            let target = target.to_string();
+        let mut stream: Socket = if let Some(proxy) = self.proxy {
+            let stream = Box::new(TcpStream::connect(proxy).await?);
+            let target = format!("{host}:{port}");
             let connect = Request::connect(target.as_str())
                 .header("host", &target)
                 .body(Full::new(Bytes::new()))?;
             let (mut response, _driver) = request(stream, connect, true).await?;
             ensure!(response.status().is_success(), "proxy refused tunnel");
-            stream = Box::new(TokioIo::new(hyper::upgrade::on(&mut response).await?));
-        }
+            Box::new(TokioIo::new(hyper::upgrade::on(&mut response).await?))
+        } else {
+            let addresses = lookup_host((host, port)).await?.collect::<Vec<_>>();
+            Box::new(TcpStream::connect(direct_target(&addresses, tls, self.mode)?).await?)
+        };
         if tls {
             stream = Box::new(
                 self.tls

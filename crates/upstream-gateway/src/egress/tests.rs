@@ -9,6 +9,7 @@ use tokio_rustls::TlsAcceptor;
 fn dev() -> Mode {
     Mode::Development {
         allow_loopback_http: true,
+        allow_private_http: false,
         allow_uncommitted: false,
     }
 }
@@ -29,15 +30,71 @@ async fn head(s: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     Ok(String::from_utf8(b)?)
 }
 #[test]
-fn cleartext_egress_requires_a_development_loopback_address() {
-    for ip in ["127.0.0.1", "::1"].map(|s| s.parse().unwrap()) {
-        assert!(allowed_address(ip, false, true));
-        assert!(!allowed_address(ip, false, false));
-    }
-    let public_ip = "8.8.8.8".parse().unwrap();
-    for allow_loopback in [false, true] {
-        assert!(!allowed_address(public_ip, false, allow_loopback));
-        assert!(allowed_address(public_ip, true, allow_loopback));
+fn direct_egress_checks_every_address_for_each_scheme_and_switch() {
+    for loopback in [false, true] {
+        for private in [false, true] {
+            let mode = Mode::Development {
+                allow_private_http: private,
+                allow_loopback_http: loopback,
+                allow_uncommitted: false,
+            };
+            for tls in [false, true] {
+                for (ips, allowed) in [
+                    (&["127.0.0.1", "::1"][..], loopback),
+                    (
+                        &[
+                            "10.0.0.0",
+                            "10.255.255.255",
+                            "172.16.0.0",
+                            "172.31.255.255",
+                            "192.168.0.1",
+                            "fc00::1",
+                            "fdff::1",
+                        ],
+                        private,
+                    ),
+                    (
+                        &[
+                            "8.8.8.8",
+                            "2606:4700:4700::1111",
+                            "172.15.255.255",
+                            "172.32.0.0",
+                        ],
+                        tls,
+                    ),
+                    (
+                        &[
+                            "0.0.0.0",
+                            "::",
+                            "169.254.169.254",
+                            "fe80::1",
+                            "100.64.0.0",
+                            "100.127.255.255",
+                            "224.0.0.1",
+                            "ff02::1",
+                            "3fff::1",
+                            "198.18.0.1",
+                            "198.19.255.255",
+                            "255.255.255.255",
+                            "240.0.0.1",
+                            "::ffff:10.0.0.1",
+                        ],
+                        false,
+                    ),
+                ] {
+                    for ip in ips {
+                        assert_eq!(
+                            allowed_address(ip.parse().unwrap(), tls, mode),
+                            allowed,
+                            "{ip}"
+                        );
+                    }
+                }
+                let mixed = ["10.0.0.1:80", "169.254.169.254:80"].map(|s| s.parse().unwrap());
+                assert!(direct_target(&mixed, tls, mode).is_err());
+                assert!(direct_target(&[], tls, mode).is_err());
+            }
+        }
     }
 }
 #[test]
@@ -66,9 +123,11 @@ fn public_address_policy() {
     assert!(public("2606:4700:4700::1111".parse().unwrap()));
 }
 #[tokio::test]
-async fn tls_and_pinned_connect_tunnel() -> Result<()> {
-    let cert =
-        rcgen::generate_simple_self_signed(vec!["localhost".to_owned(), "127.0.0.1".to_owned()])?;
+async fn direct_tls_and_proxy_resolved_hostname() -> Result<()> {
+    let cert = rcgen::generate_simple_self_signed(vec![
+        "upstream.invalid".to_owned(),
+        "127.0.0.1".to_owned(),
+    ])?;
     let mut roots = RootCertStore::empty();
     roots.add(cert.cert.der().clone())?;
     let server =
@@ -80,27 +139,25 @@ async fn tls_and_pinned_connect_tunnel() -> Result<()> {
                 PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()).into(),
             )?;
     let accept = TlsAcceptor::from(Arc::new(server));
-    for proxy in [false, true] {
+    for proxy_port in [None, Some(443), Some(8443)] {
         let endpoint = TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = endpoint.local_addr()?;
         let tls = accept.clone();
         let server = tokio::spawn(async move {
             let (mut s, _) = endpoint.accept().await?;
-            if proxy {
+            if let Some(port) = proxy_port {
                 let h = head(&mut s).await?;
                 let line = h.lines().next().unwrap();
-                let dest = line
-                    .strip_prefix("CONNECT ")
-                    .unwrap()
-                    .strip_suffix(" HTTP/1.1")
-                    .unwrap()
-                    .parse::<SocketAddr>()?;
-                ensure!(dest.ip().is_loopback() && dest.port() == 443);
+                ensure!(line == format!("CONNECT upstream.invalid:{port} HTTP/1.1"));
+                ensure!(
+                    h.lines()
+                        .any(|v| v.eq_ignore_ascii_case(&format!("host: upstream.invalid:{port}")))
+                );
                 s.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await?;
             }
             let mut s = tls.accept(s).await?;
-            if proxy {
-                ensure!(s.get_ref().1.server_name() == Some("localhost"));
+            if proxy_port.is_some() {
+                ensure!(s.get_ref().1.server_name() == Some("upstream.invalid"));
             }
             let h = head(&mut s).await?;
             ensure!(h.starts_with("GET /pay?tag=one&tag=%zz HTTP/1.1\r\n"));
@@ -114,14 +171,15 @@ async fn tls_and_pinned_connect_tunnel() -> Result<()> {
         let e = Egress::new(
             Handle::current(),
             dev(),
-            proxy.then_some(addr),
+            proxy_port.map(|_| addr),
             roots.clone(),
         )?;
-        let r = get(if proxy {
-            "https://localhost/pay?tag=one&tag=%zz".into()
-        } else {
-            format!("https://{addr}/pay?tag=one&tag=%zz")
-        });
+        let authority = match proxy_port {
+            None => addr.to_string(),
+            Some(443) => "upstream.invalid".to_owned(),
+            Some(port) => format!("upstream.invalid:{port}"),
+        };
+        let r = get(format!("https://{authority}/pay?tag=one&tag=%zz"));
         let mut response = e
             .exchange(
                 &r,

@@ -471,10 +471,7 @@ impl Gateway {
             .execute(
                 "UPDATE executors SET heartbeat=clock_timestamp(), fenced=$2 WHERE id=$1 AND NOT
              fenced",
-                &[
-                    &self.0.executor,
-                    &self.0.retiring.load(std::sync::atomic::Ordering::SeqCst),
-                ],
+                &[&self.0.executor, &self.needs_restart()],
             )
             .await
             .db()?;
@@ -488,8 +485,8 @@ impl Gateway {
         tx.commit().await.db()?;
         if updated == 0 {
             self.0
-                .retiring
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+                .lifecycle
+                .send_replace(crate::health::Lifecycle::RestartRequired);
         }
         Ok(())
     }

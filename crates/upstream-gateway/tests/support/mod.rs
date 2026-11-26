@@ -257,7 +257,29 @@ where
 }
 
 #[derive(Clone)]
-pub struct Rpc(Channel);
+pub struct Rpc(pub Channel);
+
+impl Rpc {
+    pub async fn check_serving(&self) -> Result<()> {
+        #[derive(Clone, prost::Message)]
+        struct HealthCheckResponse {
+            #[prost(int32, tag = "1")]
+            status: i32,
+        }
+        let mut grpc = tonic::client::Grpc::new(self.0.clone());
+        grpc.ready().await?;
+        let reply: tonic::Response<HealthCheckResponse> = grpc
+            .unary(
+                Request::new(()),
+                "/grpc.health.v1.Health/Check".parse()?,
+                tonic_prost::ProstCodec::default(),
+            )
+            .await?;
+        ensure!(reply.get_ref().status == 1, "expected SERVING");
+        Ok(())
+    }
+}
+
 struct Raw<U>(std::marker::PhantomData<U>);
 struct BytesEncoder;
 impl Encoder for BytesEncoder {
@@ -329,3 +351,4 @@ pub fn packages() -> PathBuf {
         .join("dist/packages")
 }
 pub mod simulator;
+pub mod token;

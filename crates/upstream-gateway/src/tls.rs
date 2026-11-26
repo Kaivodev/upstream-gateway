@@ -49,6 +49,9 @@ impl VerifiedCaller {
 #[derive(Clone, Debug)]
 pub(crate) struct Peer(String);
 impl Peer {
+    pub(crate) fn new(name: &str) -> Self {
+        Self(name.to_owned())
+    }
     pub(crate) fn name(&self) -> &str {
         &self.0
     }
@@ -77,7 +80,7 @@ fn identity(cert: &CertificateDer<'_>, domain: &str, name: &str) -> Result<Peer,
     if !rest.is_empty() || found != name || uris.next().is_some() {
         return Err(invalid());
     }
-    Ok(Peer(found.to_owned()))
+    Ok(Peer::new(found))
 }
 
 #[derive(Debug)]

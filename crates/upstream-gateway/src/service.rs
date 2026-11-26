@@ -43,6 +43,9 @@ impl Mode {
 pub trait Events: Send + Sync {
     fn alert(&self, code: &'static str);
     fn log(&self, event: &serde_json::Value);
+    fn authentication_rejected(&self, reason: &'static str, method: &str) {
+        self.log(&serde_json::json!({"reason": reason, "method": method}));
+    }
     fn completion(&self, code: &'static str) {
         self.log(&serde_json::json!({"event": "gateway_completion", "code": code}));
     }
@@ -57,7 +60,7 @@ pub(crate) struct Inner {
     pub fingerprints: crate::callback::Fingerprints,
     pub timing: crate::config::Timing,
     pub workers: tokio::sync::watch::Sender<usize>,
-    pub retiring: std::sync::atomic::AtomicBool,
+    pub lifecycle: tokio::sync::watch::Sender<health::Lifecycle>,
     pub host: Arc<Host>,
     pub cache: RwLock<HashMap<Vec<u8>, Arc<Loaded>>>,
     pub executor: String,
@@ -130,7 +133,7 @@ impl Gateway {
             fingerprints,
             timing,
             workers: tokio::sync::watch::channel(0).0,
-            retiring: Default::default(),
+            lifecycle: tokio::sync::watch::channel(health::Lifecycle::Serving).0,
             host: Arc::new(host),
             cache: Default::default(),
             executor,
@@ -193,7 +196,7 @@ impl Gateway {
     }
     /// A fenced executor needs a fresh process identity to accept new work.
     pub fn needs_restart(&self) -> bool {
-        self.0.retiring.load(std::sync::atomic::Ordering::SeqCst)
+        *self.0.lifecycle.borrow() == health::Lifecycle::RestartRequired
     }
     pub(crate) fn authorize(
         &self,
@@ -355,8 +358,8 @@ impl Gateway {
     }
     pub(crate) async fn retire(&self) -> Result<(), Status> {
         self.0
-            .retiring
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+            .lifecycle
+            .send_replace(health::Lifecycle::RestartRequired);
         let mut c = self.0.pool.get().await.db()?;
         let tx = c.transaction().await.db()?;
         tx.execute(

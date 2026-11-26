@@ -210,6 +210,7 @@ impl Suite {
         let events = Arc::new(Observer::default());
         let mode = Mode::Development {
             allow_loopback_http: true,
+            allow_private_http: false,
             allow_uncommitted: true,
         };
         let g = Gateway::init(
