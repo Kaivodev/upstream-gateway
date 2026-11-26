@@ -64,6 +64,196 @@ async fn expect_tls_alert(
     );
     Ok(())
 }
+#[test]
+fn production_migration_requires_verified_database_tls() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("migration.toml");
+    let config = "mode='production'\ndatabase_url_env='GATEWAY_TEST_DSN'";
+    for (ca, ssl, expected) in [
+        (
+            "",
+            "require",
+            "production requires database_ca_file and sslmode=require",
+        ),
+        (
+            "database_ca_file='ca'",
+            "disable",
+            "production requires database_ca_file and sslmode=require",
+        ),
+        (
+            "database_ca_file='ca'",
+            "require",
+            "invalid database CA bundle",
+        ),
+    ] {
+        std::fs::write(&path, format!("{config}\n{ca}"))?;
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_upstream-gateway"))
+            .args(["migrate", "--config"])
+            .arg(&path)
+            .env(
+                "GATEWAY_TEST_DSN",
+                format!("postgres://127.0.0.1/test?sslmode={ssl}"),
+            )
+            .output()?;
+        ensure!(!output.status.success() && output.stdout.is_empty());
+        ensure!(String::from_utf8(output.stderr)?.trim() == format!("gateway stopped: {expected}"));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "starts a real gateway process with PostgreSQL"]
+async fn serve_requires_the_expected_schema() -> Result<()> {
+    instances(&["trade"], async |rows| {
+        let instance = &mut rows[0];
+        let config =
+            std::fs::read_to_string(instance.config())?.replace("migrate_on_start=true", "");
+        std::fs::write(instance.config(), config)?;
+        let owner = instance.db.get().await?;
+        for (sql, actual) in [
+            ("", "none (unmigrated)"),
+            (
+                "CREATE TABLE gateway_migrations(version integer PRIMARY KEY);
+              INSERT INTO gateway_migrations VALUES (1)",
+                "1",
+            ),
+            ("INSERT INTO gateway_migrations VALUES (3)", "3"),
+        ] {
+            owner.batch_execute(sql).await?;
+            let error = instance.startup_error().await?;
+            ensure!(error.contains(&format!("database schema version {actual}, expected 2")));
+            ensure!(error.contains("run upstream-gateway migrate"));
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "migrates as owner and serves as a separate PostgreSQL login"]
+async fn owner_migrates_application_login_serves() -> Result<()> {
+    instances(&["trade"], async |rows| {
+        let instance = &mut rows[0];
+        let (role, app_url) = instance.create_application_login().await?;
+        let config = std::fs::read_to_string(instance.config())?;
+        std::fs::write(
+            instance.config(),
+            "mode='development'\ndatabase_url_env='GATEWAY_TEST_DSN'",
+        )?;
+
+        let missing = format!("{}_missing", instance.schema);
+        let failed = instance
+            .command(&["migrate", "--app-role", &missing])
+            .output()?;
+        ensure!(!failed.status.success());
+        ensure!(String::from_utf8(failed.stderr)?.contains("does not exist"));
+        let owner = instance.db.get().await?;
+        let absent = owner
+            .query_one("SELECT to_regclass('gateway_migrations') IS NULL", &[])
+            .await?;
+        ensure!(absent.get::<_, bool>(0));
+
+        let migrate = || -> Result<()> {
+            let output = instance
+                .command(&["migrate", "--app-role", &role])
+                .output()?;
+            ensure!(output.status.success());
+            ensure!(output.stdout == b"schema version 2, grants applied\n");
+            Ok(())
+        };
+        migrate()?;
+        let history = "SELECT array_agg(version ORDER BY version),
+                              array_agg(xmin::text ORDER BY version) FROM gateway_migrations";
+        let first = owner.query_one(history, &[]).await?;
+        ensure!(first.get::<_, Vec<i32>>(0) == [1, 2]);
+        migrate()?;
+        let second = owner.query_one(history, &[]).await?;
+        ensure!(first.get::<_, Vec<i32>>(0) == second.get::<_, Vec<i32>>(0));
+        ensure!(first.get::<_, Vec<String>>(1) == second.get::<_, Vec<String>>(1));
+        let identities = owner
+            .query_one("SELECT count(*) FROM gateway_identity", &[])
+            .await?;
+        ensure!(identities.get::<_, i64>(0) == 0);
+
+        owner
+            .batch_execute(&format!("REVOKE INSERT ON credentials FROM {role}"))
+            .await?;
+        let output = instance.command(&["migrate"]).output()?;
+        ensure!(output.status.success() && output.stdout == b"schema version 2, grants skipped\n");
+        let can_insert = owner
+            .query_one(
+                "SELECT has_table_privilege($1::name, 'credentials', 'INSERT')",
+                &[&role],
+            )
+            .await?;
+        ensure!(!can_insert.get::<_, bool>(0));
+        migrate()?;
+
+        let app_pool = upstream_gateway::pool(app_url.parse()?)?;
+        let app = app_pool.get().await?;
+        let session = app.query_one("SELECT session_user::text", &[]).await?;
+        ensure!(session.get::<_, String>(0) == role);
+        let mut denied = vec![
+            "CREATE TABLE forbidden (id integer)".to_owned(),
+            "INSERT INTO gateway_migrations VALUES (99)".to_owned(),
+            "UPDATE gateway_migrations SET version = version WHERE false".to_owned(),
+        ];
+        // Append-only tables: neither UPDATE nor DELETE.
+        for (table, column) in [
+            ("gateway_identity", "fingerprint_key"),
+            ("credentials", "sealed"),
+            ("revocations", "owner_action"),
+        ] {
+            denied.push(format!(
+                "UPDATE {table} SET {column} = {column} WHERE false"
+            ));
+            denied.push(format!("DELETE FROM {table} WHERE false"));
+        }
+        // No runtime path deletes rows.
+        for table in [
+            "executors",
+            "packages",
+            "commands",
+            "operations",
+            "attempts",
+            "gateway_migrations",
+        ] {
+            denied.push(format!("DELETE FROM {table} WHERE false"));
+        }
+        for sql in &denied {
+            let error = app.batch_execute(sql).await.unwrap_err();
+            ensure!(error.code() == Some(&tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE));
+        }
+
+        instance.use_database_url(app_url);
+        std::fs::write(
+            instance.config(),
+            config.replace("migrate_on_start=true", ""),
+        )?;
+        let rpc = instance.start().await?;
+        let package = PackageCase::publish(&rpc, "sim_form_md5").await?;
+        let payment: CreatePaymentResponse = rpc.call(package.create()).await?;
+        let execution = succeeded(payment.execution)?;
+        ensure!(execution.requests == 1 && execution.responses == 1);
+        let exchange: GetExchangeResponse = rpc
+            .call(GetExchangeRequest {
+                exchange_id: execution.exchange_id,
+            })
+            .await?;
+        ensure!(execution.evidence_sha256 == Sha256::digest(&exchange.canonical_record).as_slice());
+        let route: RouteCallbackResponse = rpc
+            .call(RouteCallbackRequest {
+                context: package.context(),
+                input: Some(package.callback(false)?),
+            })
+            .await?;
+        succeeded(route.execution)?;
+        package.revoke(&rpc).await?;
+        instance.stop(true).await
+    })
+    .await
+}
+
 #[tokio::test]
 #[ignore = "starts real gateway processes"]
 async fn tls_identity_and_rpc_policy() -> Result<()> {

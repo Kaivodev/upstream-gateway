@@ -75,6 +75,8 @@ mod config;
 mod health;
 mod kms;
 pub use kms::wrap_kek;
+mod schema;
+pub use schema::{AppRole, migrate};
 mod server;
 mod service_token;
 mod tls;

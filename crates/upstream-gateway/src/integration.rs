@@ -145,6 +145,18 @@ where
     F: FnOnce(Suite) -> Fut + Send + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
+    with_schema(move |p| async move {
+        crate::schema::apply(&p, None).await?;
+        body(Suite::new(role, p).await?).await
+    })
+    .await
+}
+
+async fn with_schema<F, Fut>(body: F) -> Result<()>
+where
+    F: FnOnce(Pool) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
     let mut cfg = std::env::var("AIPAY_TEST_DATABASE_URL")?.parse::<Config>()?;
     let admin = pool(cfg.clone())?;
     let schema = format!("ug3_{}", Uuid::now_v7().simple());
@@ -154,13 +166,81 @@ where
     tx.commit().await?;
     cfg.options(format!("-c search_path={schema}"));
     let p = pool(cfg)?;
-    let job = tokio::spawn(async move { body(Suite::new(role, p).await?).await }).await;
+    let job = tokio::spawn(body(p)).await;
     let tx = c.transaction().await?;
     tx.batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
         .await?;
     tx.commit().await?;
     job?
 }
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn migration_preserves_v07_identity() -> Result<()> {
+    with_schema(|p| async move {
+        let role = Role::Trade;
+        let vault = crypto::Vault(Arc::new(LocalKms::ephemeral()));
+        let aad = crypto::aad("aipay.upstream.callback-fingerprints.v1", role, &[]);
+        let mut key = zeroize::Zeroizing::new([0u8; 32]);
+        getrandom::fill(key.as_mut())?;
+        let sealed = vault.seal(key.as_ref(), &aad)?;
+
+        // Recreate the committed v0.7 startup state using its original SQL and envelope.
+        let mut c = p.get().await?;
+        let tx = c.transaction().await?;
+        tx.batch_execute("CREATE TABLE gateway_migrations (version integer PRIMARY KEY)")
+            .await?;
+        tx.batch_execute(include_str!("../migrations/001_gateway.sql"))
+            .await?;
+        tx.execute("INSERT INTO gateway_migrations VALUES (1)", &[])
+            .await?;
+        tx.execute(
+            "INSERT INTO gateway_identity(role,fingerprint_key) VALUES($1,$2)",
+            &[&role.name(), &sealed],
+        )
+        .await?;
+        tx.batch_execute(include_str!("../migrations/002_audit_times.sql"))
+            .await?;
+        tx.execute("INSERT INTO gateway_migrations VALUES (2)", &[])
+            .await?;
+        tx.commit().await?;
+
+        crate::schema::apply(&p, None).await?;
+        crate::schema::require_current(&p).await?;
+        db::identity(&p, role, &vault).await?;
+        let row = c
+            .query_one("SELECT role,fingerprint_key FROM gateway_identity", &[])
+            .await?;
+        ensure!(row.get::<_, &str>(0) == role.name() && row.get::<_, &[u8]>(1) == sealed);
+        ensure!(
+            db::identity(&p, Role::Verification, &vault)
+                .await
+                .err()
+                .unwrap()
+                .message()
+                == "database role mismatch"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn concurrent_identity_initialization_uses_one_key() -> Result<()> {
+    with_schema(|p| async move {
+        crate::schema::apply(&p, None).await?;
+        let vault = crypto::Vault(Arc::new(LocalKms::ephemeral()));
+        let (a, b) = tokio::try_join!(
+            db::identity(&p, Role::Trade, &vault),
+            db::identity(&p, Role::Trade, &vault)
+        )?;
+        let values = BTreeMap::from([("field".into(), zeroize::Zeroizing::new(uid()))]);
+        ensure!(a.describe(&values) == b.describe(&values));
+        Ok(())
+    })
+    .await
+}
+
 impl Suite {
     async fn new(role: Role, pool: Pool) -> Result<Self> {
         let name = if role == Role::Trade {

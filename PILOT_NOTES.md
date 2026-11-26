@@ -579,3 +579,13 @@ The following SHA-256 digests identify the local packages with `uncommitted` bui
 | --- | --- | --- | --- |
 | epay_v1 0.4.0 | `565aa4489e943df602cb736d0668f1250177aa27d89e6b964168c872d67c840d` | `d57a4bdded2fe2d00a4fc19962c8bfa4f7c2d4e779da2b39b658c6b59ec3ea3f` | `d89cfbe559ff030c4f0f7186074378470eab79fe6b924d0675fa598d1d66ee0d` |
 | epay_v1_verify 0.3.0 | `ccb6095344226d4dd812acecdc212855ff5d8a5f603fa75246edef75f22d0032` | `a8a42bfd1ba7d894411808b434af51b969ce448bc425d6efe5862f1537731db5` | `1c0d9669ff7025629d37be02117f98003c4664c831134a1bc749628b0302d4ba` |
+
+## v0.8.0 (A138) Schema migration Job
+
+The owner runs `upstream-gateway migrate --config <path> --app-role <name>`. The Job uses the database DSN and its TLS trust configuration. Schema version 2 and the v0.7.0 fingerprint envelope format are retained. The application login checks the version and initializes or opens the singleton fingerprint key. Both development examples explicitly enable startup migration.
+
+- `make bindings` and `git diff --exit-code -- guest/sdk/src` passed using Rust 1.99.1. `make check` passed, including the serve, wrap-kek and migration CLI tests, the production configuration guard and the migration binary's database TLS checks.
+- `make plugins replay repro` passed all 101 replay cases and reproduced all six packages byte for byte. `make bench calibrate stress` passed for all six plugins. The highest calibrated step used 24,152,683 fuel. Each stress run returned 16 reports identical to its serial replay.
+- Both workspaces passed frozen `make deny` for advisories, bans, licenses and sources using cached RustSec revision `c9f6c91a44dbad9d71742329e9df061279f9c4be`. The default advisory lock location was read-only. The successful run used the existing policies with a writable advisory lock directory. The host emitted duplicate-version warnings. `make vet VET_FLAGS='--locked --frozen'` passed with 12 fully audited guest packages.
+- `cargo test --locked -p upstream-gateway --no-run` and `cargo test --release --locked -p upstream-gateway --test edge --no-run` compiled the PostgreSQL suites. No PostgreSQL 18 test URL was provided, so the 17 ignored service tests and 17 ignored edge tests await execution with `make integration`. New cases cover schema mismatches, repeated migrations and grant repair, a restricted login serving RPCs, denied DDL and DML, concurrent identity creation and preservation of a v0.7.0 identity.
+- Deployment requires a pre-existing non-owner application login and a successful owner migration Job for each gateway schema. Configure both DSNs to select the same schema, mount the PostgreSQL CA for both workloads, and retain the existing runtime KEK and identity material.

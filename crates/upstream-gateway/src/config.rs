@@ -108,29 +108,38 @@ fn valid_namespace(name: &str) -> bool {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     pub role: Role,
-    mode: String,
     pub listen: SocketAddr,
     pub allowed_peers: Vec<String>,
     #[serde(default)]
     pub transport: Transport,
     pub tls: Option<Tls>,
     pub service_token: Option<ServiceToken>,
-    pub database_url_env: String,
-    pub database_ca_file: Option<PathBuf>,
-    #[serde(default = "default_database_connections")]
-    pub database_max_connections: usize,
+    #[serde(flatten)]
+    pub startup: StartupConfig,
     pub local_kek_file: Option<PathBuf>,
     pub kms: Option<KmsConfig>,
+    pub egress_proxy: Option<ProxyAddress>,
+    pub egress_ca_file: Option<PathBuf>,
+    #[serde(default)]
+    pub timing: Timing,
+}
+
+// Shared by the service configuration and the database-only migration command.
+#[derive(Deserialize)]
+pub(crate) struct StartupConfig {
+    mode: String,
+    #[serde(default)]
+    pub migrate_on_start: bool,
+    database_url_env: String,
+    database_ca_file: Option<PathBuf>,
+    #[serde(default = "default_database_connections")]
+    database_max_connections: usize,
     #[serde(default)]
     allow_loopback_http: bool,
     #[serde(default)]
     allow_private_http: bool,
     #[serde(default)]
     allow_uncommitted: bool,
-    pub egress_proxy: Option<ProxyAddress>,
-    pub egress_ca_file: Option<PathBuf>,
-    #[serde(default)]
-    pub timing: Timing,
 }
 
 // Requests, journal workers and maintenance share this pool. Managed databases
@@ -139,12 +148,80 @@ fn default_database_connections() -> usize {
     16
 }
 
+fn read_config<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    let text = std::fs::read_to_string(path).map_err(|_| anyhow!("cannot read configuration"))?;
+    toml::from_str(&text).map_err(|_| anyhow!("invalid gateway configuration"))
+}
+
+impl StartupConfig {
+    pub fn migration_pool(path: &Path) -> Result<deadpool_postgres::Pool> {
+        let mut settings: Self = read_config(path)?;
+        let mode = settings.mode()?;
+        settings.resolve_database(path.parent().unwrap_or(Path::new(".")), mode)?;
+        settings.pool(mode)
+    }
+
+    fn mode(&self) -> Result<Mode> {
+        match self.mode.as_str() {
+            "development" => Ok(Mode::Development {
+                allow_loopback_http: self.allow_loopback_http,
+                allow_private_http: self.allow_private_http,
+                allow_uncommitted: self.allow_uncommitted,
+            }),
+            "production"
+                if self.migrate_on_start
+                    || self.allow_loopback_http
+                    || self.allow_private_http
+                    || self.allow_uncommitted =>
+            {
+                anyhow::bail!("development settings in production")
+            }
+            "production" => Ok(Mode::Production),
+            _ => anyhow::bail!("invalid gateway mode"),
+        }
+    }
+
+    fn resolve_database(&mut self, dir: &Path, mode: Mode) -> Result<()> {
+        ensure!(
+            !self.database_url_env.is_empty()
+                && self.database_url_env.bytes().enumerate().all(|(i, b)| {
+                    b.is_ascii_alphabetic() || b == b'_' || i > 0 && b.is_ascii_digit()
+                }),
+            "invalid database environment reference"
+        );
+        ensure!(
+            (4..=64).contains(&self.database_max_connections),
+            "database_max_connections must be between 4 and 64"
+        );
+        ensure!(
+            !matches!(mode, Mode::Production) || self.database_ca_file.is_some(),
+            "production requires database_ca_file and sslmode=require"
+        );
+        if let Some(path) = &mut self.database_ca_file {
+            ensure!(!path.as_os_str().is_empty(), "empty file reference");
+            *path = dir.join(&*path);
+        }
+        Ok(())
+    }
+
+    pub fn pool(&self, mode: Mode) -> Result<deadpool_postgres::Pool> {
+        let url = zeroize::Zeroizing::new(
+            std::env::var(&self.database_url_env)
+                .map_err(|_| anyhow!("missing database configuration"))?,
+        );
+        crate::db::configured_pool(
+            url.parse()
+                .map_err(|_| anyhow!("invalid database configuration"))?,
+            mode,
+            self.database_ca_file.as_deref(),
+            self.database_max_connections,
+        )
+    }
+}
+
 impl Config {
     pub fn read(path: &Path) -> Result<(Self, Mode)> {
-        let text =
-            std::fs::read_to_string(path).map_err(|_| anyhow!("cannot read configuration"))?;
-        let mut c: Self =
-            toml::from_str(&text).map_err(|_| anyhow!("invalid gateway configuration"))?;
+        let mut c: Self = read_config(path)?;
         ensure!(
             c.allowed_peers == [c.role.caller()],
             "invalid peer for role"
@@ -187,46 +264,22 @@ impl Config {
                 && (3 * c.timing.heartbeat_ms as i64..=600000).contains(&c.timing.fence_ms),
             "invalid executor timing"
         );
-        ensure!(
-            !c.database_url_env.is_empty()
-                && c.database_url_env
-                    .bytes()
-                    .enumerate()
-                    .all(|(i, b)| b.is_ascii_alphabetic()
-                        || b == b'_'
-                        || i > 0 && b.is_ascii_digit()),
-            "invalid database environment reference"
-        );
-        let mode = match c.mode.as_str() {
-            "development" if c.local_kek_file.is_some() != c.kms.is_some() => Mode::Development {
-                allow_loopback_http: c.allow_loopback_http,
-                allow_private_http: c.allow_private_http,
-                allow_uncommitted: c.allow_uncommitted,
-            },
-            "development" => {
-                anyhow::bail!("development requires exactly one of local_kek_file and [kms]")
+        let mode = c.startup.mode()?;
+        match mode {
+            Mode::Development { .. } => ensure!(
+                c.local_kek_file.is_some() != c.kms.is_some(),
+                "development requires exactly one of local_kek_file and [kms]"
+            ),
+            Mode::Production => {
+                ensure!(
+                    c.local_kek_file.is_none(),
+                    "development settings in production"
+                );
+                ensure!(c.kms.is_some(), "[kms] required in production");
             }
-            "production"
-                if c.allow_loopback_http
-                    || c.allow_private_http
-                    || c.allow_uncommitted
-                    || c.local_kek_file.is_some() =>
-            {
-                anyhow::bail!("development settings in production")
-            }
-            "production" if c.kms.is_some() => Mode::Production,
-            "production" => anyhow::bail!("[kms] required in production"),
-            _ => anyhow::bail!("invalid gateway mode"),
-        };
-        ensure!(
-            (4..=64).contains(&c.database_max_connections),
-            "database_max_connections must be between 4 and 64"
-        );
-        ensure!(
-            !matches!(mode, Mode::Production) || c.database_ca_file.is_some(),
-            "production requires database_ca_file and sslmode=require"
-        );
+        }
         let dir = path.parent().unwrap_or(Path::new("."));
+        c.startup.resolve_database(dir, mode)?;
         if let Some(kms) = &mut c.kms {
             kms.resolve(dir)?;
             let wrapped = kms
@@ -243,7 +296,6 @@ impl Config {
                 .chain(c.service_token.iter_mut().flat_map(|t| {
                     std::iter::once(&mut t.jwks_file).chain(t.issuer_file.iter_mut())
                 }))
-                .chain(c.database_ca_file.iter_mut())
                 .chain(c.local_kek_file.iter_mut())
                 .chain(c.egress_ca_file.iter_mut())
         {
@@ -265,13 +317,23 @@ mod tests {
         std::fs::write(&path, TEMPLATE).unwrap();
         let (trade, _) = Config::read(&path).unwrap();
         assert_eq!(trade.role, Role::Trade);
-        assert_eq!(trade.database_max_connections, 16);
+        assert!(trade.startup.migrate_on_start);
+        std::fs::write(&path, TEMPLATE.replace("migrate_on_start = true", "")).unwrap();
+        assert!(!Config::read(&path).unwrap().0.startup.migrate_on_start);
+        assert_eq!(trade.startup.database_max_connections, 16);
         std::fs::write(
             &path,
             TEMPLATE.replace("[tls]", "database_max_connections = 4\n[tls]"),
         )
         .unwrap();
-        assert_eq!(Config::read(&path).unwrap().0.database_max_connections, 4);
+        assert_eq!(
+            Config::read(&path)
+                .unwrap()
+                .0
+                .startup
+                .database_max_connections,
+            4
+        );
         assert_eq!(trade.tls.unwrap().ca_file.parent(), Some(dir.path()));
         for (from, to) in [
             ("role = \"trade\"", ""),
@@ -284,6 +346,7 @@ mod tests {
             ("database_url_env", "database_url"),
             ("GATEWAY_DATABASE_URL", "invalid/reference"),
             ("[tls]", "[tls]\nunknown = true"),
+            ("[tls]", "unexpected_top_level = true\n[tls]"),
             ("aipay.internal", "aipay..internal"),
             ("30000", "8999"),
             ("[tls]", "database_max_connections = 3\n[tls]"),
@@ -299,6 +362,7 @@ mod tests {
             );
         }
         let clean_production = TEMPLATE
+            .replace("migrate_on_start = true", "migrate_on_start = false")
             .replace("development", "production")
             .lines()
             .filter(|l| !l.starts_with("local_kek_file"))
@@ -308,6 +372,7 @@ mod tests {
             ("allow_loopback_http", "development settings in production"),
             ("allow_uncommitted", "development settings in production"),
             ("allow_private_http", "development settings in production"),
+            ("migrate_on_start", "development settings in production"),
             ("unused", "[kms] required in production"),
         ] {
             std::fs::write(
@@ -329,6 +394,7 @@ mod tests {
             Config::read(&path)
         };
         let no_key = TEMPLATE
+            .replace("migrate_on_start = true", "migrate_on_start = false")
             .lines()
             .filter(|l| !l.starts_with("local_kek_file"))
             .collect::<Vec<_>>()
@@ -343,7 +409,7 @@ mod tests {
             assert!(parse(format!("{}{kms}", TEMPLATE.replace("development", mode))).is_err());
             let (config, selected_mode) = parse(format!("{base}{kms}")).unwrap();
             assert_eq!(
-                config.database_ca_file.unwrap(),
+                config.startup.database_ca_file.unwrap(),
                 dir.path().join("db-ca.pem")
             );
             if mode == "production" {

@@ -68,6 +68,7 @@ pub struct Instance {
     pub dir: TempDir,
     url: String,
     child: Option<Child>,
+    application_role: Option<String>,
 }
 impl Drop for Instance {
     fn drop(&mut self) {
@@ -113,6 +114,7 @@ impl Instance {
             dir,
             url,
             child: None,
+            application_role: None,
         };
         fs::write(
             result.config(),
@@ -123,6 +125,7 @@ mode="development"
 listen="{addr}"
 allowed_peers=["{}"]
 database_url_env="GATEWAY_TEST_DSN"
+migrate_on_start=true
 local_kek_file="kek"
 allow_loopback_http=true
 allow_uncommitted=true
@@ -140,15 +143,59 @@ fence_ms=1500
         )?;
         Ok(result)
     }
+    pub fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_upstream-gateway"));
+        command
+            .args(args)
+            .arg("--config")
+            .arg(self.config())
+            .env("GATEWAY_TEST_DSN", &self.url);
+        command
+    }
     pub fn spawn(&mut self) -> Result<()> {
-        self.child = Some(
-            Command::new(env!("CARGO_BIN_EXE_upstream-gateway"))
-                .arg("--config")
-                .arg(self.config())
-                .env("GATEWAY_TEST_DSN", &self.url)
-                .spawn()?,
-        );
+        self.child = Some(self.command(&[]).spawn()?);
         Ok(())
+    }
+    pub async fn startup_error(&mut self) -> Result<String> {
+        let mut child = self
+            .command(&[])
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        let stderr = child.stderr.take().unwrap();
+        self.child = Some(child);
+        self.wait_exit(false).await?;
+        Ok(std::io::read_to_string(stderr)?)
+    }
+    pub async fn create_application_login(&mut self) -> Result<(String, String)> {
+        let name = format!("{}_app", self.schema);
+        let password = Uuid::now_v7().simple().to_string();
+        // The CI database uses a TCP URL. Preserve its endpoint and database options.
+        let uri: hyper::Uri = self.url.parse()?;
+        let authority = uri
+            .authority()
+            .ok_or_else(|| anyhow!("expected a test database URL"))?;
+        let endpoint = authority.as_str().rsplit('@').next().unwrap();
+        let options = uri
+            .query()
+            .unwrap_or("")
+            .split('&')
+            .filter(|option| !option.starts_with("user=") && !option.starts_with("password="))
+            .collect::<Vec<_>>()
+            .join("&");
+        let url = format!(
+            "postgresql://{name}:{password}@{endpoint}{}?{options}",
+            uri.path()
+        );
+        self.db
+            .get()
+            .await?
+            .batch_execute(&format!("CREATE ROLE {name} LOGIN PASSWORD '{password}'"))
+            .await?;
+        self.application_role = Some(name.clone());
+        Ok((name, url))
+    }
+    pub fn use_database_url(&mut self, url: String) {
+        self.url = url;
     }
     pub async fn start(&mut self) -> Result<Rpc> {
         self.spawn()?;
@@ -244,11 +291,18 @@ where
         .collect::<String>();
     client.batch_execute(&create).await?;
     let outcome = AssertUnwindSafe(test(&mut instances)).catch_unwind().await;
+    let logins: Vec<_> = instances
+        .iter_mut()
+        .filter_map(|i| i.application_role.take())
+        .collect();
     drop(instances);
     for s in schemas {
         client
             .batch_execute(&format!("DROP SCHEMA {s} CASCADE"))
             .await?;
+    }
+    for login in logins {
+        client.batch_execute(&format!("DROP ROLE {login}")).await?;
     }
     match outcome {
         Ok(r) => r,

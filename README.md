@@ -23,7 +23,7 @@ Both roles expose ReplayPackage, RegisterPackage, RevokePackage, StoreCredential
 
 ### Gateway configuration
 
-Choose the [mTLS example](config/development.example.toml) or the [Kubernetes plaintext example](config/kubernetes.example.toml) and supply the referenced files. Relative paths resolve against the configuration file's directory. Set the environment variable named by `database_url_env` to a PostgreSQL connection string for this instance. The database principal must be able to migrate its schema.
+Choose the [mTLS example](config/development.example.toml) or the [Kubernetes plaintext example](config/kubernetes.example.toml) and supply the referenced files. Relative paths resolve against the configuration file's directory. Set the environment variable named by `database_url_env` to a PostgreSQL connection string for this instance. The migration Job and the running service use separate database logins in production.
 
 | Setting or command | Meaning |
 | --- | --- |
@@ -36,6 +36,7 @@ Choose the [mTLS example](config/development.example.toml) or the [Kubernetes pl
 | gRPC health probe | Use `grpc.health.v1.Health/Check` or `Watch` with the empty service name and the configured listener port. The gateway reports SERVING after initialization and NOT_SERVING on drain or executor retirement. Probes bypass token and method authorization. The mTLS listener still requires the role's client certificate. |
 | `tls.trust_domain`, `tls.ca_file`, `tls.cert_file`, `tls.key_file` | SPIFFE trust domain, PEM trust bundle, server leaf followed by intermediates, and matching PEM private key. |
 | `database_url_env`, `database_ca_file` | Name of the environment variable containing the DSN and optional path to the PostgreSQL CA bundle in PEM format. Production requires the bundle. |
+| `migrate_on_start` | Defaults to false. In development, true applies pending migrations before serving, using the configured login and skipping grants. Production rejects true. |
 | `database_max_connections` | Size of the shared connection pool for requests, journal workers and maintenance. Defaults to 16 and accepts 4–64. Lower it for managed databases with small connection limits. |
 | `local_kek_file` | Optional development-only path to a persistent 32-byte KEK with owner-only read or read/write permissions. |
 | `kms.key` | Unversioned Cloud KMS symmetric CryptoKey resource, for example `projects/kaivokms/locations/asia-southeast1/keyRings/test-business/cryptoKeys/upstream-gateway-trade-kek`. |
@@ -55,6 +56,35 @@ cargo build --locked --release -p upstream-gateway
 target/release/upstream-gateway --config path/to/instance.toml
 ```
 
+### Deploying and upgrading the database
+
+For each trade or verification instance, provision a schema owned by the migration login and a separate application login with database connection access. Set the same explicit schema search path on both connections. The application login must have no ownership, owner membership or inherited schema creation rights. Check grants to `PUBLIC` when reusing an older database, including database `TEMPORARY` if temporary tables are prohibited.
+
+1. Run a one-shot Job from the gateway image with the owner's DSN in the environment variable named by `database_url_env`. Give it the database configuration and production CA bundle. Its configuration can consist of `mode`, `database_url_env` and `database_ca_file`. It needs no service identity files, KEK, or KMS access.
+
+   ```sh
+   upstream-gateway migrate --config path/to/instance.toml --app-role gateway_app
+   ```
+
+   In Kubernetes, use the image entrypoint and set the Job container `args` to `["migrate", "--config", "/run/kaivo/inputs/gateway.toml", "--app-role", "gateway_app"]`.
+
+2. Wait for the Job to exit successfully. It serializes migrations under the schema advisory lock and reapplies the listed grants to the existing role on every run. The summary reports the schema version and grant status.
+3. Start `upstream-gateway --config path/to/instance.toml` with the application DSN in the same named variable. Mount the runtime authentication material, database CA and wrapped KEK, and grant the runtime identity KMS decrypt access. Startup requires schema version 2 for v0.8.0.
+
+| Object | Application privileges | Runtime use |
+| --- | --- | --- |
+| Instance schema | USAGE | Resolve gateway objects |
+| `gateway_migrations` | SELECT | Check the schema version |
+| `gateway_identity` | SELECT, INSERT | Read or initialize the singleton fingerprint key |
+| `credentials`, `revocations` | SELECT, INSERT | Store immutable credentials and permanent revocations, then consult them |
+| `executors` | SELECT, INSERT, UPDATE | Register executors, refresh heartbeats and fence them |
+| `packages`, `commands` | SELECT, INSERT, UPDATE | Register and load packages, set readiness, reserve and complete idempotent commands |
+| `operations`, `attempts` | SELECT, INSERT, UPDATE | Journal dispatches and receipts, recover operations and read sealed evidence |
+
+Schema 2 uses no sequences. The Job adds the listed privileges to the role's existing grants. Provision a dedicated application login with the intended baseline privileges.
+
+**Upgrading from v0.7.0.** Keep the original schema, gateway role and KEK. In production, use the existing table owner for the migration Job and pass the new application login with `--app-role` before starting v0.8.0. A current v0.7.0 database already reports schema 2. The Job installs the grants and preserves the existing sealed fingerprint key. Native and staging stacks using a single owner login can set `migrate_on_start = true` in development, as both examples do. To migrate such a database explicitly, omit `--app-role` and leave startup migration disabled.
+
 ### PostgreSQL TLS
 
 Set `sslmode` in the database URL. For a managed database, mount the provider CA bundle, set the top-level `database_ca_file` to its path, and use `?sslmode=require`. For CloudNativePG, mount the cluster's server CA and connect using a Service DNS name covered by its certificate.
@@ -73,7 +103,7 @@ Database TLS requires a single TCP host and uses TLS 1.2 or 1.3. With a CA file,
 Build from the repository root with BuildKit.
 
 ```sh
-docker build -t upstream-gateway:0.7.0 .
+docker build -t upstream-gateway:0.8.0 .
 ```
 
 The builder installs wasm-tools 1.263.0, fetches the locked host dependencies, and compiles the release binary with network access disabled. The shared deploy workflow may supply the `COMMIT` build argument and the optional `aipay_modules_token` secret. Neither is used.
@@ -96,7 +126,7 @@ Cloud KMS primary key-version rotation requires no file change. Keep the KMS ver
 
 ### Service lifecycle
 
-Startup validates configuration and the selected identity material, applies migrations, registers an executor, starts maintenance, and loads registered components before binding the listener. Listener mTLS files are reread every 30 seconds. A changed bundle must validate as a whole and preserve its authentication usages before new handshakes adopt it. Established connections keep their original peer identity.
+Startup validates configuration and the selected identity material, checks the schema version, then reads the singleton gateway identity. On first start it seals a fresh fingerprint key, inserts it with conflict handling, and reads back the stored row. Concurrent replicas use the same winning key. Each replica checks the stored gateway role and opens the key before registering its executor, starting maintenance and loading components. Listener mTLS files are reread every 30 seconds. A changed bundle must validate as a whole and preserve its authentication usages before new handshakes adopt it. Established connections keep their original peer identity.
 
 SIGTERM closes admission and allows up to 75 seconds for active RPCs and detached journal workers to finish. Once the executor requires restart, new requests receive Unavailable while the listener drains, and the process exits unsuccessfully. Run under a supervisor that starts a new process identity on failure. The new executor seals a previously dispatched, interrupted operation as UNKNOWN with `dispatch_interrupted`. An operation without a dispatch marker can execute when its owner retries the original key.
 
@@ -104,4 +134,4 @@ The gateway opens the upstream connection before it journals a dispatch. A URL o
 
 StoreCredentials returns an immutable reference and a digest. RegisterPackage requires the approved digests computed by replay. GetExchange returns authenticated evidence to the original caller. Callback screening fingerprints all stored credential values, including registered public keys. A callback reflecting one of these values can therefore produce `secret_leak` and quarantined evidence. The caller still receives the exchange ID and digest.
 
-Run `make integration` with `AIPAY_TEST_DATABASE_URL` in the environment for PostgreSQL-backed service tests and real-process mTLS and projected-token acceptance. The tests use disposable schemas, generated certificates and keys, and loopback HTTP simulators.
+Run `make integration` with `AIPAY_TEST_DATABASE_URL` in the environment for PostgreSQL-backed service tests and real-process mTLS and projected-token acceptance. The test database login must be able to create disposable schemas and application logins. The tests use generated certificates and keys, and loopback HTTP simulators.

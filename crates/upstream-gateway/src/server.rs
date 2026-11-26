@@ -278,17 +278,10 @@ pub async fn run(path: &Path) -> Result<()> {
         )?)),
         _ => anyhow::bail!("invalid authentication settings for transport"),
     };
-    let url = zeroize::Zeroizing::new(
-        std::env::var(&config.database_url_env)
-            .map_err(|_| anyhow!("missing database configuration"))?,
-    );
-    let pool = crate::db::configured_pool(
-        url.parse()
-            .map_err(|_| anyhow!("invalid database configuration"))?,
-        mode,
-        config.database_ca_file.as_deref(),
-        config.database_max_connections,
-    )?;
+    let pool = config.startup.pool(mode)?;
+    if config.startup.migrate_on_start {
+        crate::schema::apply(&pool, None).await?;
+    }
     let kms = match (&config.kms, &config.local_kek_file) {
         (Some(config_kms), None) => crate::kms::unwrap(config_kms, config.role, &Observer).await?,
         (None, Some(file)) => {

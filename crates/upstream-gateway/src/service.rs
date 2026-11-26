@@ -122,8 +122,9 @@ impl Gateway {
         if matches!(mode, Mode::Production) && kms.development_only() {
             return Err(Status::failed_precondition("development KMS"));
         }
+        schema::require_current(&pool).await?;
         let vault = Vault(kms);
-        let fingerprints = db::migrate(&pool, role, &vault).await?;
+        let fingerprints = db::identity(&pool, role, &vault).await?;
         let options = mode.host_options(role);
         let host = tokio::task::spawn_blocking(move || Host::new(options))
             .await

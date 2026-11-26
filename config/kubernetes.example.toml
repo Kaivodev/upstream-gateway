@@ -3,6 +3,8 @@ mode = "development"
 transport = "plaintext"
 listen = "0.0.0.0:9107"
 allowed_peers = ["payment"]
+# Schema changes run in a separate Job: upstream-gateway migrate --app-role <application role>,
+# with the owner role's URL. This process connects with the application role.
 database_url_env = "GATEWAY_DATABASE_URL"
 allow_loopback_http = false
 allow_private_http = true

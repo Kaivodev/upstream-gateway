@@ -103,65 +103,37 @@ pub(crate) fn configured_pool(
         .build()
         .map_err(|_| unavailable())?)
 }
-pub(crate) async fn migrate(
+pub(crate) async fn identity(
     pool: &Pool,
     role: Role,
     vault: &crate::crypto::Vault,
 ) -> Result<crate::callback::Fingerprints, Status> {
+    const READ_IDENTITY: &str = "SELECT role,fingerprint_key FROM gateway_identity WHERE singleton";
     let aad = crate::crypto::aad("aipay.upstream.callback-fingerprints.v1", role, &[]);
     let mut c = pool.get().await.db()?;
-    let tx = c.transaction().await.db()?;
-    tx.query_one(
-        "SELECT pg_advisory_xact_lock(hashtextextended(current_schema() ||
-     '.gateway_migrations', 0))",
-        &[],
-    )
-    .await
-    .db()?;
-    tx.batch_execute("CREATE TABLE IF NOT EXISTS gateway_migrations (version integer PRIMARY KEY)")
+    let tx = c
+        .build_transaction()
+        .isolation_level(tokio_postgres::IsolationLevel::ReadCommitted)
+        .start()
         .await
         .db()?;
-    let version: Option<i32> = tx
-        .query_one("SELECT max(version) FROM gateway_migrations", &[])
-        .await
-        .db()?
-        .get(0);
-    match version {
+    let row = match tx.query_opt(READ_IDENTITY, &[]).await.db()? {
+        Some(row) => row,
         None => {
-            tx.batch_execute(include_str!("../migrations/001_gateway.sql"))
-                .await
-                .db()?;
-            tx.execute("INSERT INTO gateway_migrations VALUES (1)", &[])
-                .await
-                .db()?;
             let mut key = zeroize::Zeroizing::new([0; 32]);
             getrandom::fill(key.as_mut()).map_err(|_| unavailable())?;
             let sealed = vault.seal(key.as_ref(), &aad)?;
             tx.execute(
-                "INSERT INTO gateway_identity(role,fingerprint_key) VALUES($1,$2)",
+                "INSERT INTO gateway_identity(role,fingerprint_key) VALUES($1,$2)
+                 ON CONFLICT (singleton) DO NOTHING",
                 &[&role.name(), &sealed],
             )
             .await
             .db()?;
+            // At READ COMMITTED this statement also sees a concurrent winner.
+            tx.query_one(READ_IDENTITY, &[]).await.db()?
         }
-        Some(1 | 2) => {}
-        _ => return Err(Status::failed_precondition("unsupported schema version")),
-    }
-    if version != Some(2) {
-        tx.batch_execute(include_str!("../migrations/002_audit_times.sql"))
-            .await
-            .db()?;
-        tx.execute("INSERT INTO gateway_migrations VALUES (2)", &[])
-            .await
-            .db()?;
-    }
-    let row = tx
-        .query_one(
-            "SELECT role,fingerprint_key FROM gateway_identity WHERE singleton",
-            &[],
-        )
-        .await
-        .db()?;
+    };
     if row.get::<_, &str>(0) != role.name() {
         return Err(Status::failed_precondition("database role mismatch"));
     }
