@@ -1,4 +1,5 @@
 mod build;
+mod record;
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::BTreeMap,
@@ -42,6 +43,13 @@ fn run() -> Result<()> {
             opts.remove(k).with_context(|| format!("missing {k}"))?,
         ))
     };
+    if cmd == "record" {
+        let plugin = path("--plugin")?;
+        let out = path("--out")?;
+        let sim = opts.remove("--sim").context("missing --sim")?;
+        ensure!(opts.is_empty(), "unknown option");
+        return record::run(&plugin, &sim, &out);
+    }
     if cmd == "build" {
         let plugin = path("--plugin")?;
         let out = path("--out")?;

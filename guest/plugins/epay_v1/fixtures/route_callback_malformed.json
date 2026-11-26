@@ -1,0 +1,26 @@
+{
+  "name": "route_callback/malformed",
+  "source": "recorded_callback_with_constructed_malformed_query",
+  "operation": "route_callback",
+  "input": {
+    "body": "",
+    "headers": {},
+    "method": "GET",
+    "raw_query": "bWFsZm9ybWVkJQ=="
+  },
+  "config": {
+    "gateway": "http://127.0.0.1:19181",
+    "pid": "1001",
+    "product_name": "Kaivo 测试商品"
+  },
+  "time": "2026-11-26T04:20:44.025114Z",
+  "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
+  "exchanges": [],
+  "expected": {
+    "category": "not_sent",
+    "error_code": "plugin_error",
+    "requests": 0,
+    "responses": 0,
+    "steps": 1
+  }
+}

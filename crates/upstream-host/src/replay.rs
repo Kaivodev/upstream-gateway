@@ -22,7 +22,11 @@ use std::{
     time::Instant,
 };
 use zeroize::Zeroizing;
-const MARK: &str = "TEST_SIGNATURE_REGENERATED_AT_REPLAY";
+mod query;
+pub use crate::state::Scanner;
+pub use query::SignedQuery;
+
+pub const MARK: &str = "TEST_SIGNATURE_REGENERATED_AT_REPLAY";
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WireRequest {
@@ -308,6 +312,7 @@ impl TestCredentials for Ephemeral {
 }
 fn resign(
     f: &mut Fixture,
+    manifest: &Manifest,
     keys: &dyn TestCredentials,
     protected: &mut crate::state::Scanner,
 ) -> Result<()> {
@@ -319,10 +324,43 @@ fn resign(
         "invalid re-sign operation"
     );
     let mut h = headers_from(&f.input["headers"]).context("invalid callback headers")?;
+    let b = BASE64_STANDARD.decode(f.input["body"].as_str().context("missing callback body")?)?;
+    if b.is_empty()
+        && !h
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("Content-Type"))
+        && let Some(encoded) = f.input["raw_query"].as_str().filter(|s| !s.is_empty())
+    {
+        let raw = BASE64_STANDARD.decode(encoded)?;
+        let query = SignedQuery::parse(&raw)?;
+        let mut shared = manifest
+            .secrets
+            .iter()
+            .filter(|(_, kind)| *kind == "shared");
+        let (name, _) = shared.next().context("invalid re-sign credentials")?;
+        ensure!(shared.next().is_none(), "invalid re-sign credentials");
+        let mut md5 = md5::Md5::new();
+        let mut first = true;
+        for (key, value) in &query.fields {
+            if value.is_empty() || matches!(key.as_slice(), b"sign" | b"sign_type") {
+                continue;
+            }
+            if !first {
+                md5.update(b"&");
+            }
+            first = false;
+            md5.update(key);
+            md5.update(b"=");
+            md5.update(value);
+        }
+        let sig = hex(&md5.chain_update(&*keys.shared(name)?).finalize());
+        protected.add(sig.as_bytes());
+        f.input["raw_query"] = json!(BASE64_STANDARD.encode(query.replace_signature(&sig)));
+        return Ok(());
+    }
     let ct = http::values(&h, "Content-Type")
         .first()
         .context("missing media")?;
-    let b = BASE64_STANDARD.decode(f.input["body"].as_str().context("missing callback body")?)?;
     if ct == "application/json" {
         let sig = keys.callback_signature(ct, &b)?;
         protected.add(sig.as_bytes());
@@ -429,6 +467,19 @@ impl Transport for Recorded {
         })
     }
 }
+pub fn required_scenarios(op: &str) -> &'static [&'static str] {
+    match op {
+        "route_callback" => &["success", "malformed"],
+        "verify_callback" => &["success", "signature_error", "amount_mismatch"],
+        _ => &[
+            "success",
+            "rejected",
+            "signature_error",
+            "timeout",
+            "amount_mismatch",
+        ],
+    }
+}
 pub struct Replay {
     host: Host,
     loaded: Arc<Loaded>,
@@ -462,18 +513,7 @@ impl Replay {
             cases.insert(path.clone(), (digest(b), f));
         }
         for op in &p.manifest.capabilities {
-            let scenarios: &[&str] = match op.as_str() {
-                "route_callback" => &["success", "malformed"],
-                "verify_callback" => &["success", "signature_error", "amount_mismatch"],
-                _ => &[
-                    "success",
-                    "rejected",
-                    "signature_error",
-                    "timeout",
-                    "amount_mismatch",
-                ],
-            };
-            for s in scenarios {
+            for s in required_scenarios(op) {
                 ensure!(
                     coverage.contains(&format!("{op}/{s}")),
                     "missing required case {op}/{s}"
@@ -488,7 +528,7 @@ impl Replay {
     }
     fn case(&self, mut f: Fixture, keys: Arc<dyn TestCredentials>) -> Result<(Execution, bool)> {
         let mut protected = crate::state::Scanner::default();
-        resign(&mut f, &*keys, &mut protected)?;
+        resign(&mut f, self.loaded.manifest(), &*keys, &mut protected)?;
         let random = Mutex::new(SeedStream::new(
             BASE64_STANDARD
                 .decode(&f.random_seed)?
@@ -553,6 +593,67 @@ pub use calibration::{Calibration, OperationMaxima, Peak};
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct VectorKey;
+    impl TestCredentials for VectorKey {
+        fn shared(&self, name: &str) -> Result<Zeroizing<Vec<u8>>> {
+            ensure!(name == "merchant_key", "unexpected credential");
+            Ok(Zeroizing::new(b"vector-secret".to_vec()))
+        }
+    }
+
+    fn query_fixture(query: &[u8]) -> Fixture {
+        let mut f = Fixture::decode(include_bytes!(
+            "../../../guest/plugins/sim_form_md5/fixtures/verify_callback_success.json"
+        ))
+        .unwrap();
+        f.input["body"] = json!("");
+        f.input["headers"] = json!({});
+        f.input["raw_query"] = json!(BASE64_STANDARD.encode(query));
+        f
+    }
+
+    #[test]
+    fn query_resigning_preserves_wire_bytes_and_protects_the_signature() {
+        let mut m: Manifest = serde_json::from_value(crate::tests::manifest()).unwrap();
+        m.secrets = BTreeMap::from([("merchant_key".into(), "shared".into())]);
+        let mut f =
+            query_fixture(b"name=%E8%8C%B6+shop&%73ign=old&sign_type=MD5&empty=&Z=a%2Fb&_key=0");
+        let mut protected = Scanner::default();
+        resign(&mut f, &m, &VectorKey, &mut protected).unwrap();
+        let raw = BASE64_STANDARD
+            .decode(f.input["raw_query"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(raw, b"name=%E8%8C%B6+shop&%73ign=57ca3bd3c13fae53be240e4de17a1b9e&sign_type=MD5&empty=&Z=a%2Fb&_key=0");
+        assert!(protected.bytes(b"57ca3bd3c13fae53be240e4de17a1b9e"));
+        for invalid in [
+            "x=1",
+            "sign=a&%73ign=b",
+            "=x&sign=x",
+            "x=%&sign=x",
+            "x=%ag&sign=x",
+            "sign=x&k&%6b=y",
+        ] {
+            assert!(
+                resign(
+                    &mut query_fixture(invalid.as_bytes()),
+                    &m,
+                    &VectorKey,
+                    &mut protected
+                )
+                .is_err()
+            );
+        }
+        m.secrets.insert("second".into(), "shared".into());
+        for secrets in [m.secrets.clone(), BTreeMap::new()] {
+            m.secrets = secrets;
+            assert_eq!(
+                resign(&mut f, &m, &VectorKey, &mut protected)
+                    .unwrap_err()
+                    .to_string(),
+                "invalid re-sign credentials"
+            );
+        }
+    }
     #[test]
     fn signature_normalization_preserves_recorded_values_and_raw_json() {
         let mut r = HttpRequest {

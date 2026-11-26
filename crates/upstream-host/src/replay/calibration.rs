@@ -29,6 +29,25 @@ fn oversized_callback(f: &mut Fixture, keys: &dyn TestCredentials) -> Result<()>
         f.input["order_id"] = json!(order);
     }
 
+    if raw.is_empty()
+        && let Some(encoded) = f.input["raw_query"].as_str()
+    {
+        let query = BASE64_STANDARD.decode(encoded)?;
+        let mut fields = form::parse(&query).context("invalid callback query")?;
+        form::set(&mut fields, "out_trade_no", &order);
+        form::set(&mut fields, "sign", &"0".repeat(32));
+        form::set(&mut fields, "padding", "");
+        let mut query = form::encode_bytes(&fields);
+        // Extend the padding value to the host query limit before the normal re-sign step.
+        let padding = (16_usize << 10)
+            .checked_sub(query.len())
+            .context("callback query budget")?;
+        form::set(&mut fields, "padding", &"p".repeat(padding));
+        query = form::encode_bytes(&fields);
+        f.input["raw_query"] = json!(BASE64_STANDARD.encode(query));
+        return pad_headers(f);
+    }
+
     let (body, event) = if f.input["headers"]["Content-Type"][0] == "application/json" {
         let mut v = json::object(&raw)?;
         v["order_id"] = json!(order);

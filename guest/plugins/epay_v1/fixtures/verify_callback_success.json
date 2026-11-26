@@ -1,0 +1,53 @@
+{
+  "name": "verify_callback/success",
+  "source": "recorded_upstream_sim_loopback",
+  "operation": "verify_callback",
+  "input": {
+    "body": "",
+    "headers": {},
+    "method": "GET",
+    "money": {
+      "amount": "12345",
+      "currency": "CNY"
+    },
+    "order_id": "test_20261126042044025114000_verify_callback_success",
+    "raw_query": "cGlkPTEwMDEmdHJhZGVfbm89MjAyNjExMjYxMjIwNDgwNDEzNzUmb3V0X3RyYWRlX25vPXRlc3RfMjAyNjExMjYwNDIwNDQwMjUxMTQwMDBfdmVyaWZ5X2NhbGxiYWNrX3N1Y2Nlc3MmdHlwZT1hbGlwYXkmbmFtZT1LYWl2byslRTYlQjUlOEIlRTglQUYlOTUlRTUlOTUlODYlRTUlOTMlODEmbW9uZXk9MTIzLjQ1JnRyYWRlX3N0YXR1cz1UUkFERV9TVUNDRVNTJnBhcmFtPSZzaWduPVRFU1RfU0lHTkFUVVJFX1JFR0VORVJBVEVEX0FUX1JFUExBWSZzaWduX3R5cGU9TUQ1"
+  },
+  "config": {
+    "gateway": "http://127.0.0.1:19181",
+    "pid": "1001",
+    "product_name": "Kaivo 测试商品"
+  },
+  "time": "2026-11-26T04:20:44.025114Z",
+  "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
+  "test_only_resign_callback": true,
+  "exchanges": [],
+  "expected": {
+    "category": "completed",
+    "result": {
+      "callback": {
+        "ack": {
+          "body": "c3VjY2Vzcw==",
+          "headers": {
+            "Content-Type": [
+              "text/plain"
+            ]
+          },
+          "status": 200
+        },
+        "event_id": "20261126122048041375",
+        "money": {
+          "amount": "12345",
+          "currency": "CNY"
+        },
+        "order_id": "test_20261126042044025114000_verify_callback_success",
+        "status": "paid",
+        "upstream_id": "20261126122048041375"
+      },
+      "outcome": "completed"
+    },
+    "requests": 0,
+    "responses": 0,
+    "steps": 1
+  }
+}

@@ -152,11 +152,12 @@ fn input(op: &str, v: &Value, s: &State) -> Check<Input> {
         }
         let headers = http::normalize(&headers_from(&v["headers"]).ok_or("callback_headers")?)
             .ok_or("callback_headers")?;
-        if !http::values(&headers, "Content-Type")
-            .first()
-            .and_then(|s| media(s))
-            .is_some_and(|s| rules.content_types.contains(&s))
-        {
+        // Query-only GET notifications such as EPay V1 can omit the media type.
+        let allowed = match http::values(&headers, "Content-Type").first() {
+            Some(value) => media(value).is_some_and(|s| rules.content_types.contains(&s)),
+            None => method == "GET" && body.is_empty(),
+        };
+        if !allowed {
             return Err("callback_content_type");
         }
         let source_ip = v
@@ -700,3 +701,59 @@ mod tests {
 
 #[cfg(test)]
 mod dispatch_tests;
+
+#[cfg(test)]
+mod callback_input_tests {
+    use super::*;
+    use crate::{environment::SystemEnvironment, package::Manifest};
+
+    #[test]
+    fn media_type_exception_requires_an_allowed_bodyless_get() {
+        for op in ["route_callback", "verify_callback"] {
+            for (method, allow_get, body, ct, error) in [
+                ("GET", true, "", None, None),
+                (
+                    "GET",
+                    true,
+                    "",
+                    Some("application/x-www-form-urlencoded; charset=utf-8"),
+                    None,
+                ),
+                (
+                    "GET",
+                    true,
+                    "",
+                    Some("text/plain"),
+                    Some("callback_content_type"),
+                ),
+                ("GET", true, "", Some(""), Some("callback_content_type")),
+                ("GET", true, "eA==", None, Some("callback_content_type")),
+                ("HEAD", true, "", None, Some("callback_content_type")),
+                ("POST", true, "", None, Some("callback_content_type")),
+                ("GET", false, "", None, Some("callback_request")),
+            ] {
+                let mut m: Manifest = serde_json::from_value(crate::tests::manifest()).unwrap();
+                let rules = m.callback.as_mut().unwrap();
+                rules.methods.push("HEAD".into());
+                if allow_get {
+                    rules.methods.push("GET".into());
+                }
+                let state = State::new(
+                    Arc::new(m),
+                    Arc::new(SystemEnvironment),
+                    Default::default(),
+                    op,
+                );
+                let mut value = json!({"method":method, "body":body, "headers":{}});
+                if let Some(ct) = ct {
+                    value["headers"]["content-type"] = json!([ct]);
+                }
+                if op == "verify_callback" {
+                    value["order_id"] = json!("order");
+                    value["money"] = json!({"amount":"1", "currency":"CNY"});
+                }
+                assert_eq!(input(op, &value, &state).err(), error, "{op} {value}");
+            }
+        }
+    }
+}

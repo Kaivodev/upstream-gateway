@@ -12,7 +12,7 @@ use tempfile::{TempDir, tempdir_in};
 use upstream_host::{
     engine::{Host, Options},
     json as wire,
-    package::{Manifest, Package, entry_path, file, fixtures, hex, safe_path},
+    package::{Fixtures, Manifest, Package, entry_path, file, fixtures, hex, safe_path},
 };
 fn checked(c: &mut Command) -> Result<Output> {
     let o = c
@@ -492,7 +492,7 @@ impl Builder {
         }
         Ok(())
     }
-    fn build(&self, commit: String) -> Result<Package> {
+    fn build(&self, commit: String, recordings: Fixtures) -> Result<Package> {
         let closure = self.tree()?;
         if commit != "uncommitted" && self.root.join(".git").exists() {
             let tracked = checked(
@@ -555,7 +555,7 @@ impl Builder {
             snapshot.digest == closure.digest,
             "source changed while taking snapshot"
         );
-        staged.compile(commit, snapshot, fixtures(&self.plugin)?)
+        staged.compile(commit, snapshot, recordings)
     }
     fn compile(
         &self,
@@ -662,6 +662,9 @@ fn walk(root: &Path, p: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
     }
     Ok(())
 }
+pub fn recording_component(plugin: &Path) -> Result<Package> {
+    Builder::new(plugin)?.build("uncommitted".into(), Fixtures::new())
+}
 pub fn build(plugin: &Path, out: &Path) -> Result<()> {
     let b = Builder::new(plugin)?;
     let dest = entry_path(out)?;
@@ -672,7 +675,7 @@ pub fn build(plugin: &Path, out: &Path) -> Result<()> {
         "package output overlaps source tree"
     );
     let before = source_commit(&b.root).unwrap_or_else(|_| "uncommitted".into());
-    let p = b.build(before.clone())?;
+    let p = b.build(before.clone(), fixtures(&b.plugin)?)?;
     ensure!(
         before == "uncommitted" || source_commit(&b.root)? == before,
         "checkout changed during build"
@@ -769,7 +772,7 @@ pub fn verify(p: &Package, repo: &Path) -> Result<()> {
             .arg(&checkout),
     )?;
     let b = Builder::new(&checkout.join("guest/plugins").join(&p.manifest.code))?;
-    let rebuilt = b.build(commit.clone())?;
+    let rebuilt = b.build(commit.clone(), fixtures(&b.plugin)?)?;
     ensure!(
         rebuilt.wasm == p.wasm
             && serde_json::to_value(&rebuilt.manifest)? == serde_json::to_value(&p.manifest)?

@@ -1456,7 +1456,11 @@ name = "pluginctl"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "getrandom 0.4.3",
+ "kaivo-upstream-sdk",
+ "md-5",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",

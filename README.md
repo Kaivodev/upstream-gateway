@@ -1,8 +1,10 @@
 # Kaivo upstream gateway pilot
 
-The Rust host executes ABI v3 payment and verification components in fresh Wasmtime instances. The form/MD5 and JSON/RSA simulators use separate worlds and credentials. The pilot runs offline recordings and has no default network transport.
+The Rust host executes ABI v3 payment and verification components in fresh Wasmtime instances. The form/MD5 and JSON/RSA simulators use separate worlds and credentials. The EPay V1 payment plugin routes and verifies GET notifications. UG-6 will add payment creation once the contract carries the buyer IP. The pilot runs offline recordings and has no default network transport.
 
 Install the Rust toolchain in `rust-toolchain.toml`, wasm-tools 1.263.0 and wit-bindgen-cli 0.63.0. The builder also uses Python 3.14.7, Git and tar. Run `cargo fetch --locked` for the host. Guest sources and generated bindings are included. Run `make check plugins replay repro` to test, package, replay and compare two independent builds. Reports are under `dist/reports/`. Run `make bench calibrate stress` for measurements and `make deny vet` for admission checks.
+
+To record EPay V1 callback fixtures, start upstream-sim in its test environment and export its control token as `UPSTREAM_SIM_CONTROL_TOKEN` (at least 16 bytes). Run `target/debug/pluginctl record --plugin guest/plugins/epay_v1 --sim http://127.0.0.1:9080 --out FIXTURES` with the simulator's actual port and an empty or new output directory. The recorder accepts only HTTP origins on literal 127.0.0.1 or [::1] with an explicit port. It captures test notifications, checks their host outcomes, removes signatures and replays all cases with fresh credentials before publishing. After installing the fixtures under the plugin's `fixtures/` directory, run `make check plugins replay repro deny vet` and `make bench calibrate stress`.
 
 To refresh the vendored contract, set `PROTOBUF_DIR` to a protobuf checkout and run `PROTOBUF_VERSION=v0.17.0 make proto-sync`. Run `make proto-check` to verify the digests in `proto/source.json`. With `PROTOBUF_DIR` set, it also compares both files with the recorded tag.
 

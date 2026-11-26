@@ -1,4 +1,4 @@
-PLUGINS = sim_form_md5 sim_form_md5_verify sim_json_rsa sim_json_rsa_verify
+PLUGINS = sim_form_md5 sim_form_md5_verify sim_json_rsa sim_json_rsa_verify epay_v1
 PROTOCOLS = sim-form-md5-protocol sim-json-rsa-protocol
 CTL = target/debug/pluginctl
 RELEASE_CTL = target/release/pluginctl
@@ -15,6 +15,7 @@ check: proto-check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo test --locked --workspace
 	cd guest && cargo test --locked -p kaivo-upstream-sdk --features trade
+	cd guest && cargo test --locked -p epay_v1
 	cd guest && set -e; for p in $(PLUGINS); do cargo clippy --locked --target wasm32-unknown-unknown -p $$p -p kaivo-upstream-sdk -- -D warnings; done
 	cd guest && cargo clippy --locked --target wasm32-unknown-unknown -p abi_probe -- -D warnings
 	cd guest && set -e; for p in $(PROTOCOLS); do for w in trade verification; do cargo clippy --locked --target wasm32-unknown-unknown -p $$p --features $$w -- -D warnings; cargo test --locked -p $$p --features $$w; done; done
