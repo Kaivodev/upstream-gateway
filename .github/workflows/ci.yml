@@ -125,3 +125,16 @@ jobs:
       - run: make integration
         env:
           AIPAY_TEST_DATABASE_URL: postgres://gateway_test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/gateway_test
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Build the container image
+        run: docker build --tag upstream-gateway:ci .
+      - name: Run as non-root with a read-only root filesystem
+        run: |
+          out=$(docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges upstream-gateway:ci --config /nonexistent 2>&1 || true)
+          printf '%s\n' "$out"
+          grep -qx 'gateway stopped: cannot read configuration' <<<"$out"
+          test "$(docker image inspect --format '{{.Config.User}}' upstream-gateway:ci)" = 65532:65532
