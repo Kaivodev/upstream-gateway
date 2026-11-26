@@ -83,7 +83,7 @@ For each trade or verification instance, provision a schema owned by the migrati
 
 Schema 2 uses no sequences. The Job adds the listed privileges to the role's existing grants. Provision a dedicated application login with the intended baseline privileges.
 
-**Upgrading from v0.7.0.** Keep the original schema, gateway role and KEK. In production, use the existing table owner for the migration Job and pass the new application login with `--app-role` before starting v0.8.0. A current v0.7.0 database already reports schema 2. The Job installs the grants and preserves the existing sealed fingerprint key. Native and staging stacks using a single owner login can set `migrate_on_start = true` in development, as both examples do. To migrate such a database explicitly, omit `--app-role` and leave startup migration disabled.
+**Upgrading from v0.7.0 or earlier.** Keep the original schema, gateway role and KEK, and run the migration before the first v0.8.0 start. In production, run the migration Job with the existing table owner and pass the new application login with `--app-role`; it installs the grants and preserves the sealed fingerprint key. In development, run the same command, or set `migrate_on_start = true` as the development example does (the Kubernetes example uses the Job). Any database last started by an earlier gateway release reports schema 2, but a database created or restored by other means can report schema 1 (seen on a local development stack). v0.8.0 refuses to serve until such a database is migrated, so do not skip the migration on upgrade. To migrate a single-login development database explicitly, omit `--app-role` and leave startup migration disabled.
 
 ### PostgreSQL TLS
 
