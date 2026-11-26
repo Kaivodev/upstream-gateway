@@ -25,6 +25,8 @@ fn input() -> CreatePaymentInput {
         callback_url: "https://example.test/notify".into(),
         bank_mode: None,
         instruction: Some("url".into()),
+        client_ip: None,
+        device: None,
     }
 }
 
@@ -181,13 +183,22 @@ fn mapi_signs_raw_fields_and_posts_exact_encoded_bytes() {
         (Some("mobile"), "wxpay", "device=mobile&"),
     ] {
         input.method = method.into();
-        let step = mapi_request(&config(), &input, "127.0.0.1", device, |bytes| {
-            let expected = format!(
-                "clientip=127.0.0.1&{device_field}money=1.50&name=Tea 茶&notify_url=https://example.test/notify/a=1&b=2&out_trade_no=Order-7_a&pid=42&type={method}"
-            );
-            assert_eq!(bytes, expected.as_bytes());
-            "test-signature".into()
-        });
+        input.client_ip = Some("127.0.0.1".into());
+        input.device = device.map(str::to_owned);
+        let step = create_payment(
+            CreateCall {
+                input: input.clone(),
+                responses: vec![],
+            },
+            &config(),
+            |bytes| {
+                let expected = format!(
+                    "clientip=127.0.0.1&{device_field}money=1.50&name=Tea 茶&notify_url=https://example.test/notify/a=1&b=2&out_trade_no=Order-7_a&pid=42&type={method}"
+                );
+                assert_eq!(bytes, expected.as_bytes());
+                "test-signature".into()
+            },
+        );
         let Step::Request(req) = step else {
             panic!("{step:?}")
         };

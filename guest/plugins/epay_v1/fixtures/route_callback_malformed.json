@@ -9,11 +9,11 @@
     "raw_query": "bWFsZm9ybWVkJQ=="
   },
   "config": {
-    "gateway": "http://127.0.0.1:19181",
+    "gateway": "http://127.0.0.1:56136",
     "pid": "1001",
     "product_name": "Kaivo 测试商品"
   },
-  "time": "2026-11-26T04:20:44.025114Z",
+  "time": "2026-11-26T05:03:13.77951Z",
   "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
   "exchanges": [],
   "expected": {

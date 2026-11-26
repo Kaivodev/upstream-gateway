@@ -31,9 +31,8 @@ fn credential_interoperability_vector() {
         assert!(crypto::credentials(bad).is_err())
     }
 }
-#[test]
-fn request_golden_header_order_and_presence() {
-    let c = OperationContext {
+fn vector_context() -> OperationContext {
+    OperationContext {
         idempotency_key: "k".into(),
         package_sha256: vec![1; 32],
         channel_account_id: "018f0000-0000-7000-8000-000000000001".into(),
@@ -42,7 +41,12 @@ fn request_golden_header_order_and_presence() {
         credentials_ref: "ref".into(),
         credentials_sha256: vec![2; 32],
         ..Default::default()
-    };
+    }
+}
+
+#[test]
+fn request_golden_header_order_and_presence() {
+    let c = vector_context();
     let v = CallbackPayload {
         method: "POST".into(),
         raw_query: vec![255],
@@ -77,6 +81,86 @@ fn request_golden_header_order_and_presence() {
         "f82a5b833da62d7ee29001e6d7442bf992e5adbb38c938b0de2bb5a0f4db4da9"
     );
 }
+#[test]
+fn create_buyer_fields_validate_and_bind_the_request_digest() {
+    let material = |ip: Option<&str>, device: Option<&str>| {
+        business::Input::Create(CreatePaymentInput {
+            order_id: "order_1".into(),
+            money: Some(Money {
+                amount: "12345".into(),
+                currency: "CNY".into(),
+            }),
+            method: "alipay".into(),
+            callback_url: "https://example.test/callback".into(),
+            instruction: Some("url".into()),
+            client_ip: ip.map(str::to_owned),
+            device: device.map(str::to_owned),
+            ..Default::default()
+        })
+        .material(Role::Trade, "payment", vector_context())
+    };
+    for (ip, device, digest) in [
+        (
+            None,
+            None,
+            "dbd3ec950032739062bddba4985c5cd9f6e7d84622ab5c27b2bafcc6a09443ef",
+        ),
+        (
+            Some("1.2.3.4"),
+            None,
+            "a6c12a78da145c96946c9f32b3f47180f2cc7da5e9ab703c4f4863b473475390",
+        ),
+        (
+            None,
+            Some("pc"),
+            "5ccf79a6a30da2c3d3ae7358d1b2b5680ce3cddbf8ca638ba06768f76a2453a6",
+        ),
+        (
+            Some("1.2.3.4"),
+            Some("pc"),
+            "e1c772272dfcc13838f85da9d19fcfc8ffb1b17d2c53b5a7ec1a7796dba579b1",
+        ),
+        (
+            Some("2001:db8::1"),
+            Some("pc"),
+            "87009fdfea849850e6aa37bcf455d3de616baeef72900fc0b80f31464f686e4a",
+        ),
+        (
+            Some("1.2.3.4"),
+            Some("m_1"),
+            "d89d662d4b71f51d847d86a07858fd1d8e5d4e0860e63b25c8f8e74d8a4fc40f",
+        ),
+    ] {
+        let m = material(ip, device).unwrap();
+        assert_eq!(hex(&m.digest), digest);
+        let raw: serde_json::Value = serde_json::from_slice(&m.raw).unwrap();
+        for (field, expected) in [("client_ip", ip), ("device", device)] {
+            assert_eq!(
+                raw.get(field),
+                expected.map(serde_json::Value::from).as_ref()
+            );
+        }
+    }
+    for bad in [
+        "2001:DB8::1",
+        "::ffff:1.2.3.4",
+        "::ffff:102:304",
+        "1.2.3.4:80",
+        "fe80::1%lo0",
+        "",
+    ] {
+        let err = material(Some(bad), None).err().unwrap();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert_eq!(err.message(), "invalid request");
+    }
+    for bad in ["", "PC", "a-b", &"a".repeat(33)] {
+        assert_eq!(
+            material(None, Some(bad)).err().unwrap().code(),
+            tonic::Code::InvalidArgument
+        );
+    }
+}
+
 #[test]
 fn exchange_golden_partial_raw_headers() {
     let mut e = Encoder::domain(

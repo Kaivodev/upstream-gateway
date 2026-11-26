@@ -141,6 +141,21 @@ impl State {
         }
         Ok(())
     }
+    pub fn flush_logs(&self, private: &Scanner) {
+        // Check the buffered streams as well as individual events before publishing any of them.
+        if self.logs.is_empty()
+            || private.bytes(&self.log_text)
+            || private.bytes(&self.log_messages)
+            || self.log_values.values().any(|v| private.bytes(v))
+            || self.logs.iter().any(|v| private.value(v))
+        {
+            return;
+        }
+        for event in &self.logs {
+            self.env.log(event);
+        }
+    }
+
     pub fn check(&self) -> Check<()> {
         if self.cancel.cancelled() {
             Err("cancelled")

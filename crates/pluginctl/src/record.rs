@@ -1,6 +1,7 @@
 //! Capture expected executions with simulator credentials, then replay with fresh keys.
 mod epay;
 mod http;
+mod transport;
 
 use anyhow::{Context, Result, ensure};
 use base64::prelude::*;
@@ -21,6 +22,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use transport::CaptureTransport;
 use upstream_host::{
     environment::{Cancellation, Environment},
     execute::Execution,
@@ -109,10 +111,18 @@ impl Drop for Listener {
 struct CaptureEnv {
     config: BTreeMap<String, String>,
     keys: Arc<dyn TestCredentials>,
+    transport: Option<CaptureTransport>,
+    protected: Arc<Mutex<Scanner>>,
     now: time::Timestamp,
     random: Mutex<SeedStream>,
 }
 impl Environment for CaptureEnv {
+    fn transport(&self) -> Option<&dyn upstream_host::environment::Transport> {
+        self.transport.as_ref().map(|t| t as _)
+    }
+    fn observe_signature(&self, signature: &str) {
+        self.protected.lock().unwrap().add(signature.as_bytes());
+    }
     fn config(&self, _: &Cancellation) -> BTreeMap<String, String> {
         self.config.clone()
     }
@@ -139,30 +149,40 @@ struct Evidence<'a> {
     random_seed: &'a str,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     test_only_resign_callback: bool,
-    exchanges: [Value; 0],
+    exchanges: Vec<Value>,
     expected: Execution,
 }
 
 // Scan both the serialized evidence and the wire data carried inside Base64 fields.
 fn check_evidence(bytes: &[u8], protected: &Scanner) -> Result<()> {
     ensure!(!protected.bytes(bytes), "protected data in fixture");
-    let fixture = Fixture::decode(bytes)?;
-    for key in ["raw_query", "body"] {
-        let raw = BASE64_STANDARD.decode(
-            fixture.input[key]
-                .as_str()
-                .context("missing callback data")?,
-        )?;
-        ensure!(!protected.bytes(&raw), "protected data in callback");
-        if key == "raw_query"
-            && let Some(fields) = form::parse(&raw)
-        {
+    Fixture::decode(bytes)?;
+    let fixture: Value = serde_json::from_slice(bytes)?;
+    let check_wire = |value: &Value| -> Result<()> {
+        let raw = BASE64_STANDARD.decode(value.as_str().context("invalid recorded bytes")?)?;
+        ensure!(!protected.bytes(&raw), "protected data in recorded bytes");
+        if let Some(fields) = form::parse(&raw) {
             for (key, values) in fields {
                 ensure!(
                     !protected.bytes(&key) && values.iter().all(|v| !protected.bytes(v)),
-                    "protected callback field"
+                    "protected form field"
                 );
             }
+        }
+        Ok(())
+    };
+    for key in ["raw_query", "body"] {
+        if let Some(value) = fixture["input"].get(key) {
+            check_wire(value)?;
+        }
+    }
+    for exchange in fixture["exchanges"]
+        .as_array()
+        .context("missing exchanges")?
+    {
+        check_wire(&exchange["request"]["body"])?;
+        if let Some(response) = exchange.get("response") {
+            check_wire(&response["body"])?;
         }
     }
     Ok(())
@@ -214,14 +234,14 @@ pub fn run(plugin: &Path, origin: &str, out: &Path) -> Result<()> {
         "invalid simulator control token"
     );
     let mut p = crate::build::recording_component(plugin)?;
-    let mut protected = Scanner::default();
-    protected.add(token.as_bytes());
+    let protected = Arc::new(Mutex::new(Scanner::default()));
+    protected.lock().unwrap().add(token.as_bytes());
     match p.manifest.code.as_str() {
-        "epay_v1" => epay::record(&mut p, &sim, origin, &token, &mut protected)?,
+        "epay_v1" => epay::record(&mut p, &sim, origin, &token, &protected)?,
         _ => anyhow::bail!("no recording recipe"),
     }
     for bytes in p.fixtures.values() {
-        check_evidence(bytes, &protected)?;
+        check_evidence(bytes, &protected.lock().unwrap())?;
     }
     ensure!(
         Replay::new(&p)?.run()?["passed"] == true,
@@ -262,6 +282,29 @@ mod tests {
             listener.wait().unwrap().query,
             b"out_trade_no=selected&sign=x"
         );
+    }
+
+    #[test]
+    fn create_evidence_scans_headers_and_decoded_request_and_response_bodies() {
+        let mut sig = [0; 16];
+        getrandom::fill(&mut sig).unwrap();
+        let sig = hex(&sig);
+        let mut scan = Scanner::default();
+        scan.add(sig.as_bytes());
+        let raw = include_bytes!(
+            "../../../guest/plugins/sim_form_md5/fixtures/create_payment_success.json"
+        );
+        let fixture: Value = serde_json::from_slice(raw).unwrap();
+        check_evidence(raw, &scan).unwrap();
+        for side in ["request", "response"] {
+            let mut f = fixture.clone();
+            f["exchanges"][0][side]["body"] =
+                json!(BASE64_STANDARD.encode(format!("prefix={sig}&end=1")));
+            assert!(check_evidence(&serde_json::to_vec(&f).unwrap(), &scan).is_err());
+            let mut f = fixture.clone();
+            f["exchanges"][0][side]["headers"]["X-Test"] = json!([sig]);
+            assert!(check_evidence(&serde_json::to_vec(&f).unwrap(), &scan).is_err());
+        }
     }
 
     #[test]

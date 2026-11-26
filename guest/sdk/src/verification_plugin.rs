@@ -564,6 +564,8 @@ pub mod exports {
                     pub callback_url: _rt::String,
                     pub bank_mode: ::core::option::Option<_rt::String>,
                     pub instruction: ::core::option::Option<_rt::String>,
+                    pub client_ip: ::core::option::Option<_rt::String>,
+                    pub device: ::core::option::Option<_rt::String>,
                 }
                 impl ::core::fmt::Debug for CreatePaymentInput {
                     fn fmt(
@@ -577,6 +579,8 @@ pub mod exports {
                             .field("callback-url", &self.callback_url)
                             .field("bank-mode", &self.bank_mode)
                             .field("instruction", &self.instruction)
+                            .field("client-ip", &self.client_ip)
+                            .field("device", &self.device)
                             .finish()
                     }
                 }
@@ -3361,9 +3365,9 @@ macro_rules! __export_verification_plugin_impl {
         (link_section =
         "component-type:wit-bindgen:0.63.0:kaivo:upstream@3.0.0:verification-plugin:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2019] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2038] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd9\x0e\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xec\x0e\x01A\x02\x01\
 A\x0a\x01B\x17\x01r\x02\x07secondsx\x05nanosy\x04\0\x08utc-time\x03\0\0\x01p}\x01\
 q\x02\x04data\x01\x02\0\x06secret\x01s\0\x04\0\x04part\x03\0\x03\x01@\x01\x04nam\
 es\0s\x04\0\x06config\x01\x05\x01ks\x01p\x04\x01@\x03\x09algorithms\x03key\x06\x05\
@@ -3376,37 +3380,38 @@ al\x01\x0a\x01o\x02ss\x01p\x0b\x01@\x03\x05levels\x07messages\x06fields\x0c\0\x7
 p\x03\x04\0\x07headers\x03\0\x04\x01r\x02\x06amounts\x08currencys\x04\0\x05money\
 \x03\0\x06\x01p}\x01r\x04\x06methods\x03urls\x07headers\x05\x04body\x08\x04\0\x0c\
 http-request\x03\0\x09\x01r\x03\x06status{\x07headers\x05\x04body\x08\x04\0\x0dh\
-ttp-response\x03\0\x0b\x01ks\x01r\x06\x08order-ids\x05money\x07\x06methods\x0cca\
-llback-urls\x09bank-mode\x0d\x0binstruction\x0d\x04\0\x14create-payment-input\x03\
-\0\x0e\x01r\x02\x08order-ids\x05money\x07\x04\0\x0dpayment-input\x03\0\x10\x01r\x03\
-\x08order-ids\x09refund-ids\x05money\x07\x04\0\x0crefund-input\x03\0\x12\x01r\x05\
-\x06methods\x09raw-query\x08\x07headers\x05\x04body\x08\x09source-ip\x0d\x04\0\x14\
-route-callback-input\x03\0\x14\x01r\x03\x08order-ids\x05money\x07\x03raw\x15\x04\
-\0\x0ecallback-input\x03\0\x16\x01m\x05\x07pending\x04paid\x06closed\x06failed\x07\
-unknown\x04\0\x0epayment-status\x03\0\x18\x01m\x04\x07pending\x09succeeded\x06fa\
-iled\x07unknown\x04\0\x0drefund-status\x03\0\x1a\x01k\x01\x01r\x08\x08order-ids\x0b\
-upstream-ids\x05money\x07\x06status\x19\x03url\x0d\x06qrcode\x0d\x07paid-at\x1c\x0a\
-expires-at\x1c\x04\0\x0epayment-output\x03\0\x1d\x01r\x05\x08order-ids\x09refund\
--ids\x12upstream-refund-ids\x05money\x07\x06status\x1b\x04\0\x0drefund-output\x03\
-\0\x1f\x01r\x01\x08order-ids\x04\0\x15route-callback-output\x03\0!\x01r\x06\x08e\
-vent-ids\x08order-ids\x0bupstream-ids\x05money\x07\x06status\x19\x03ack\x0c\x04\0\
-\x0fcallback-output\x03\0#\x01p\x0c\x01r\x02\x05input\x0f\x09responses%\x04\0\x0b\
-create-call\x03\0&\x01r\x02\x05input\x11\x09responses%\x04\0\x0cpayment-call\x03\
-\0(\x01r\x02\x05input\x13\x09responses%\x04\0\x0brefund-call\x03\0*\x01r\x02\x05\
-input\x15\x09responses%\x04\0\x0aroute-call\x03\0,\x01r\x02\x05input\x17\x09resp\
-onses%\x04\0\x0dcallback-call\x03\0.\x01q\x04\x07payment\x01\x1e\0\x06refund\x01\
-\x20\0\x05route\x01\"\0\x08callback\x01$\0\x04\0\x06output\x03\00\x01r\x02\x05va\
-lue1\x04code\x0d\x04\0\x0acompletion\x03\02\x01q\x04\x09completed\x013\0\x08reje\
-cted\x01s\0\x07unknown\x01\x0d\0\x05error\x01\x0d\0\x04\0\x10operation-result\x03\
-\04\x01q\x02\x07request\x01\x0a\0\x06result\x015\0\x04\0\x04step\x03\06\x04\0\x1a\
-kaivo:upstream/types@3.0.0\x05\x02\x02\x03\0\x01\x0cpayment-call\x02\x03\0\x01\x0b\
-refund-call\x02\x03\0\x01\x04step\x01B\x0a\x02\x03\x02\x01\x03\x04\0\x0cpayment-\
-call\x03\0\0\x02\x03\x02\x01\x04\x04\0\x0brefund-call\x03\0\x02\x02\x03\x02\x01\x05\
-\x04\0\x04step\x03\0\x04\x01@\x01\x04call\x01\0\x05\x04\0\x0dquery-payment\x01\x06\
-\x01@\x01\x04call\x03\0\x05\x04\0\x0cquery-refund\x01\x07\x04\0!kaivo:upstream/v\
-erification@3.0.0\x05\x06\x04\0(kaivo:upstream/verification-plugin@3.0.0\x04\0\x0b\
-\x19\x01\0\x13verification-plugin\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
-\x0dwit-component\x070.262.0\x10wit-bindgen-rust\x060.63.0";
+ttp-response\x03\0\x0b\x01ks\x01r\x08\x08order-ids\x05money\x07\x06methods\x0cca\
+llback-urls\x09bank-mode\x0d\x0binstruction\x0d\x09client-ip\x0d\x06device\x0d\x04\
+\0\x14create-payment-input\x03\0\x0e\x01r\x02\x08order-ids\x05money\x07\x04\0\x0d\
+payment-input\x03\0\x10\x01r\x03\x08order-ids\x09refund-ids\x05money\x07\x04\0\x0c\
+refund-input\x03\0\x12\x01r\x05\x06methods\x09raw-query\x08\x07headers\x05\x04bo\
+dy\x08\x09source-ip\x0d\x04\0\x14route-callback-input\x03\0\x14\x01r\x03\x08orde\
+r-ids\x05money\x07\x03raw\x15\x04\0\x0ecallback-input\x03\0\x16\x01m\x05\x07pend\
+ing\x04paid\x06closed\x06failed\x07unknown\x04\0\x0epayment-status\x03\0\x18\x01\
+m\x04\x07pending\x09succeeded\x06failed\x07unknown\x04\0\x0drefund-status\x03\0\x1a\
+\x01k\x01\x01r\x08\x08order-ids\x0bupstream-ids\x05money\x07\x06status\x19\x03ur\
+l\x0d\x06qrcode\x0d\x07paid-at\x1c\x0aexpires-at\x1c\x04\0\x0epayment-output\x03\
+\0\x1d\x01r\x05\x08order-ids\x09refund-ids\x12upstream-refund-ids\x05money\x07\x06\
+status\x1b\x04\0\x0drefund-output\x03\0\x1f\x01r\x01\x08order-ids\x04\0\x15route\
+-callback-output\x03\0!\x01r\x06\x08event-ids\x08order-ids\x0bupstream-ids\x05mo\
+ney\x07\x06status\x19\x03ack\x0c\x04\0\x0fcallback-output\x03\0#\x01p\x0c\x01r\x02\
+\x05input\x0f\x09responses%\x04\0\x0bcreate-call\x03\0&\x01r\x02\x05input\x11\x09\
+responses%\x04\0\x0cpayment-call\x03\0(\x01r\x02\x05input\x13\x09responses%\x04\0\
+\x0brefund-call\x03\0*\x01r\x02\x05input\x15\x09responses%\x04\0\x0aroute-call\x03\
+\0,\x01r\x02\x05input\x17\x09responses%\x04\0\x0dcallback-call\x03\0.\x01q\x04\x07\
+payment\x01\x1e\0\x06refund\x01\x20\0\x05route\x01\"\0\x08callback\x01$\0\x04\0\x06\
+output\x03\00\x01r\x02\x05value1\x04code\x0d\x04\0\x0acompletion\x03\02\x01q\x04\
+\x09completed\x013\0\x08rejected\x01s\0\x07unknown\x01\x0d\0\x05error\x01\x0d\0\x04\
+\0\x10operation-result\x03\04\x01q\x02\x07request\x01\x0a\0\x06result\x015\0\x04\
+\0\x04step\x03\06\x04\0\x1akaivo:upstream/types@3.0.0\x05\x02\x02\x03\0\x01\x0cp\
+ayment-call\x02\x03\0\x01\x0brefund-call\x02\x03\0\x01\x04step\x01B\x0a\x02\x03\x02\
+\x01\x03\x04\0\x0cpayment-call\x03\0\0\x02\x03\x02\x01\x04\x04\0\x0brefund-call\x03\
+\0\x02\x02\x03\x02\x01\x05\x04\0\x04step\x03\0\x04\x01@\x01\x04call\x01\0\x05\x04\
+\0\x0dquery-payment\x01\x06\x01@\x01\x04call\x03\0\x05\x04\0\x0cquery-refund\x01\
+\x07\x04\0!kaivo:upstream/verification@3.0.0\x05\x06\x04\0(kaivo:upstream/verifi\
+cation-plugin@3.0.0\x04\0\x0b\x19\x01\0\x13verification-plugin\x03\0\0\0G\x09pro\
+ducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.262.0\x10wit-bindgen-rust\x06\
+0.63.0";
         };
     };
 }

@@ -139,17 +139,6 @@ fn supported_method(method: &str) -> bool {
     matches!(method, "alipay" | "wxpay")
 }
 
-fn client_ip(_input: &CreatePaymentInput) -> Option<String> {
-    // Read the buyer IP from the create input once WIT exposes client-ip.
-    // Until then the manifest omits create_payment.
-    None
-}
-
-fn device(_input: &CreatePaymentInput) -> Option<&str> {
-    // Read device from the input when WIT exposes it. Omission uses EPay's PC default.
-    None
-}
-
 pub(super) fn create_payment(
     call: CreateCall,
     config: &Config,
@@ -162,15 +151,16 @@ pub(super) fn create_payment(
     if input.bank_mode.is_some() {
         return error("bank_mode");
     }
-    if input.callback_url.contains(['?', '#']) {
+    let callback_url = input.callback_url.as_bytes();
+    if callback_url.contains(&b'?') || callback_url.contains(&b'#') {
         return error("callback_url");
     }
     match call.responses.as_slice() {
         [] => {
-            let Some(ip) = client_ip(&input) else {
+            let Some(ip) = input.client_ip.as_deref() else {
                 return error("client_ip_unavailable");
             };
-            mapi_request(config, &input, &ip, device(&input), sign)
+            mapi_request(config, &input, ip, input.device.as_deref(), sign)
         }
         [response] => mapi_response(input, response),
         _ => error("response_count"),

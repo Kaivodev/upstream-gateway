@@ -5,13 +5,14 @@ use std::{
     net::{SocketAddr, TcpStream},
     time::{Duration, Instant},
 };
-use upstream_host::package::token;
+use upstream_host::{environment::Cancellation, package::token, types::Headers as WireHeaders};
 
 pub(super) const TIMEOUT: Duration = Duration::from_secs(5);
 const HEADER_LIMIT: usize = 16 << 10;
 const RESPONSE_LIMIT: usize = 1 << 20;
 pub(super) const FORM: &str = "application/x-www-form-urlencoded";
 
+#[derive(Clone, Copy)]
 pub(super) struct Simulator {
     addr: SocketAddr,
 }
@@ -59,13 +60,7 @@ impl Simulator {
         media: Option<&str>,
         body: &[u8],
     ) -> Result<Response> {
-        check_target(path)?;
-        let mut stream = TcpStream::connect_timeout(&self.addr, TIMEOUT)?;
-        stream.set_write_timeout(Some(TIMEOUT))?;
-        let mut head = format!(
-            "{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
-            self.addr
-        );
+        let mut head = String::new();
         if let Some(token) = bearer {
             ensure!(
                 token.len() >= 16 && token.bytes().all(|b| b.is_ascii_graphic()),
@@ -78,10 +73,58 @@ impl Simulator {
         if let Some(media) = media {
             head.push_str(&format!("Content-Type: {media}\r\n"));
         }
-        head.push_str(&format!("Content-Length: {}\r\n\r\n", body.len()));
-        stream.write_all(head.as_bytes())?;
-        stream.write_all(body)?;
-        read_response(&mut reader(&stream))
+        self.exchange(
+            method,
+            path,
+            &head,
+            body,
+            Instant::now() + TIMEOUT,
+            &Cancellation::default(),
+        )
+    }
+
+    pub fn post_form(
+        &self,
+        url: &str,
+        body: &[u8],
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<Response> {
+        let path = self.pay_target(url)?;
+        self.exchange(
+            "POST",
+            path,
+            &format!("Content-Type: {FORM}\r\n"),
+            body,
+            deadline,
+            cancel,
+        )
+    }
+
+    fn exchange(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &str,
+        body: &[u8],
+        deadline: Instant,
+        cancel: &Cancellation,
+    ) -> Result<Response> {
+        check_target(path)?;
+        let stream = TcpStream::connect_timeout(&self.addr, remaining(deadline, cancel)?)?;
+        let mut io = TimedSocket {
+            stream: &stream,
+            until: deadline,
+            cancel,
+        };
+        write!(
+            io,
+            "{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n{headers}Content-Length: {}\r\n\r\n",
+            self.addr,
+            body.len()
+        )?;
+        io.write_all(body)?;
+        read_response(&mut BufReader::new(io))
     }
 }
 
@@ -97,26 +140,60 @@ fn check_target(path: &str) -> Result<()> {
     Ok(())
 }
 
-struct TimedRead<'a> {
+fn remaining(deadline: Instant, cancel: &Cancellation) -> io::Result<Duration> {
+    if cancel.cancelled() {
+        return Err(io::Error::other("recording cancelled"));
+    }
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|d| !d.is_zero())
+        .ok_or_else(|| io::ErrorKind::TimedOut.into())
+}
+
+struct TimedSocket<'a> {
     stream: &'a TcpStream,
     until: Instant,
+    cancel: &'a Cancellation,
 }
-impl Read for TimedRead<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let remaining = self
-            .until
-            .checked_duration_since(Instant::now())
-            .filter(|d| !d.is_zero())
-            .ok_or(io::ErrorKind::TimedOut)?;
-        self.stream.set_read_timeout(Some(remaining))?;
-        self.stream.read(buf)
+impl TimedSocket<'_> {
+    fn poll(
+        &self,
+        mut op: impl FnMut(&TcpStream, Duration) -> io::Result<usize>,
+    ) -> io::Result<usize> {
+        loop {
+            let wait = remaining(self.until, self.cancel)?.min(Duration::from_millis(100));
+            match op(self.stream, wait) {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                result => return result,
+            }
+        }
     }
 }
-fn reader(stream: &TcpStream) -> impl BufRead + '_ {
-    BufReader::new(TimedRead {
-        stream,
-        until: Instant::now() + TIMEOUT,
-    })
+impl Read for TimedSocket<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.poll(|mut s, wait| {
+            s.set_read_timeout(Some(wait))?;
+            s.read(buf)
+        })
+    }
+}
+impl Write for TimedSocket<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.poll(|mut s, wait| {
+            s.set_write_timeout(Some(wait))?;
+            s.write(buf)
+        })
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn line(r: &mut impl BufRead, budget: &mut usize) -> Result<Vec<u8>> {
@@ -133,6 +210,7 @@ struct Headers {
     length: Option<usize>,
     chunked: bool,
     media: Vec<String>,
+    values: std::collections::BTreeMap<String, Vec<String>>,
 }
 fn headers(r: &mut impl BufRead, budget: &mut usize) -> Result<Headers> {
     let mut h = Headers::default();
@@ -142,6 +220,10 @@ fn headers(r: &mut impl BufRead, budget: &mut usize) -> Result<Headers> {
             break;
         }
         let (name, value) = header(&bytes)?;
+        h.values
+            .entry(name.to_ascii_lowercase())
+            .or_default()
+            .push(value.to_owned());
         if name.eq_ignore_ascii_case("Content-Length") {
             ensure!(
                 !value.is_empty()
@@ -219,6 +301,7 @@ fn chunked(r: &mut impl BufRead) -> Result<Vec<u8>> {
 }
 pub(super) struct Response {
     pub status: u16,
+    pub headers: WireHeaders,
     pub body: Vec<u8>,
 }
 fn read_response(r: &mut impl BufRead) -> Result<Response> {
@@ -249,7 +332,11 @@ fn read_response(r: &mut impl BufRead) -> Result<Response> {
         ensure!(body.len() <= RESPONSE_LIMIT, "HTTP body too large");
         body
     };
-    Ok(Response { status, body })
+    Ok(Response {
+        status,
+        headers: h.values.into_iter().collect(),
+        body,
+    })
 }
 
 pub(super) struct Callback {
@@ -286,7 +373,11 @@ pub(super) fn accept(mut stream: TcpStream) -> Result<Callback> {
     // Accepted sockets can inherit the nonblocking listener flag on BSD.
     stream.set_nonblocking(false)?;
     stream.set_write_timeout(Some(TIMEOUT))?;
-    let received = callback(&mut reader(&stream));
+    let received = callback(&mut BufReader::new(TimedSocket {
+        stream: &stream,
+        until: Instant::now() + TIMEOUT,
+        cancel: &Cancellation::default(),
+    }));
     if received.is_err() {
         stream.write_all(
             b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",

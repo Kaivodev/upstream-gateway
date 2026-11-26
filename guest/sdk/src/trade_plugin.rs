@@ -564,6 +564,8 @@ pub mod exports {
                     pub callback_url: _rt::String,
                     pub bank_mode: ::core::option::Option<_rt::String>,
                     pub instruction: ::core::option::Option<_rt::String>,
+                    pub client_ip: ::core::option::Option<_rt::String>,
+                    pub device: ::core::option::Option<_rt::String>,
                 }
                 impl ::core::fmt::Debug for CreatePaymentInput {
                     fn fmt(
@@ -577,6 +579,8 @@ pub mod exports {
                             .field("callback-url", &self.callback_url)
                             .field("bank-mode", &self.bank_mode)
                             .field("instruction", &self.instruction)
+                            .field("client-ip", &self.client_ip)
+                            .field("device", &self.device)
                             .finish()
                     }
                 }
@@ -1038,7 +1042,7 @@ pub mod exports {
                 ) -> *mut u8 {
                     unsafe {
                         #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
-                        let result42 = {
+                        let result50 = {
                             let l0 = *arg0.add(0).cast::<*mut u8>();
                             let l1 = *arg0
                                 .add(::core::mem::size_of::<*const u8>())
@@ -1095,104 +1099,114 @@ pub mod exports {
                                     .add(13 * ::core::mem::size_of::<*const u8>())
                                     .cast::<u8>(),
                             );
-                            let l23 = *arg0
-                                .add(16 * ::core::mem::size_of::<*const u8>())
+                            let l23 = i32::from(
+                                *arg0
+                                    .add(16 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<u8>(),
+                            );
+                            let l27 = i32::from(
+                                *arg0
+                                    .add(19 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<u8>(),
+                            );
+                            let l31 = *arg0
+                                .add(22 * ::core::mem::size_of::<*const u8>())
                                 .cast::<*mut u8>();
-                            let l24 = *arg0
-                                .add(17 * ::core::mem::size_of::<*const u8>())
+                            let l32 = *arg0
+                                .add(23 * ::core::mem::size_of::<*const u8>())
                                 .cast::<usize>();
-                            let base41 = l23;
-                            let len41 = l24;
-                            let mut result41 = _rt::Vec::with_capacity(len41);
-                            for i in 0..len41 {
-                                let base = base41
+                            let base49 = l31;
+                            let len49 = l32;
+                            let mut result49 = _rt::Vec::with_capacity(len49);
+                            for i in 0..len49 {
+                                let base = base49
                                     .add(i * (5 * ::core::mem::size_of::<*const u8>()));
-                                let e41 = {
-                                    let l25 = i32::from(*base.add(0).cast::<u16>());
-                                    let l26 = *base
+                                let e49 = {
+                                    let l33 = i32::from(*base.add(0).cast::<u16>());
+                                    let l34 = *base
                                         .add(::core::mem::size_of::<*const u8>())
                                         .cast::<*mut u8>();
-                                    let l27 = *base
+                                    let l35 = *base
                                         .add(2 * ::core::mem::size_of::<*const u8>())
                                         .cast::<usize>();
-                                    let base37 = l26;
-                                    let len37 = l27;
-                                    let mut result37 = _rt::Vec::with_capacity(len37);
-                                    for i in 0..len37 {
-                                        let base = base37
+                                    let base45 = l34;
+                                    let len45 = l35;
+                                    let mut result45 = _rt::Vec::with_capacity(len45);
+                                    for i in 0..len45 {
+                                        let base = base45
                                             .add(i * (4 * ::core::mem::size_of::<*const u8>()));
-                                        let e37 = {
-                                            let l28 = *base.add(0).cast::<*mut u8>();
-                                            let l29 = *base
+                                        let e45 = {
+                                            let l36 = *base.add(0).cast::<*mut u8>();
+                                            let l37 = *base
                                                 .add(::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len30 = l29;
-                                            let bytes30 = _rt::Vec::from_raw_parts(
-                                                l28.cast(),
-                                                len30,
-                                                len30,
+                                            let len38 = l37;
+                                            let bytes38 = _rt::Vec::from_raw_parts(
+                                                l36.cast(),
+                                                len38,
+                                                len38,
                                             );
-                                            let l31 = *base
+                                            let l39 = *base
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l32 = *base
+                                            let l40 = *base
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let base36 = l31;
-                                            let len36 = l32;
-                                            let mut result36 = _rt::Vec::with_capacity(len36);
-                                            for i in 0..len36 {
-                                                let base = base36
+                                            let base44 = l39;
+                                            let len44 = l40;
+                                            let mut result44 = _rt::Vec::with_capacity(len44);
+                                            for i in 0..len44 {
+                                                let base = base44
                                                     .add(i * (2 * ::core::mem::size_of::<*const u8>()));
-                                                let e36 = {
-                                                    let l33 = *base.add(0).cast::<*mut u8>();
-                                                    let l34 = *base
+                                                let e44 = {
+                                                    let l41 = *base.add(0).cast::<*mut u8>();
+                                                    let l42 = *base
                                                         .add(::core::mem::size_of::<*const u8>())
                                                         .cast::<usize>();
-                                                    let len35 = l34;
-                                                    let bytes35 = _rt::Vec::from_raw_parts(
-                                                        l33.cast(),
-                                                        len35,
-                                                        len35,
+                                                    let len43 = l42;
+                                                    let bytes43 = _rt::Vec::from_raw_parts(
+                                                        l41.cast(),
+                                                        len43,
+                                                        len43,
                                                     );
-                                                    _rt::string_lift(bytes35)
+                                                    _rt::string_lift(bytes43)
                                                 };
-                                                result36.push(e36);
+                                                result44.push(e44);
                                             }
                                             _rt::cabi_dealloc(
-                                                base36,
-                                                len36 * (2 * ::core::mem::size_of::<*const u8>()),
+                                                base44,
+                                                len44 * (2 * ::core::mem::size_of::<*const u8>()),
                                                 ::core::mem::size_of::<*const u8>(),
                                             );
-                                            (_rt::string_lift(bytes30), result36)
+                                            (_rt::string_lift(bytes38), result44)
                                         };
-                                        result37.push(e37);
+                                        result45.push(e45);
                                     }
                                     _rt::cabi_dealloc(
-                                        base37,
-                                        len37 * (4 * ::core::mem::size_of::<*const u8>()),
+                                        base45,
+                                        len45 * (4 * ::core::mem::size_of::<*const u8>()),
                                         ::core::mem::size_of::<*const u8>(),
                                     );
-                                    let l38 = *base
+                                    let l46 = *base
                                         .add(3 * ::core::mem::size_of::<*const u8>())
                                         .cast::<*mut u8>();
-                                    let l39 = *base
+                                    let l47 = *base
                                         .add(4 * ::core::mem::size_of::<*const u8>())
                                         .cast::<usize>();
-                                    let len40 = l39;
+                                    let len48 = l47;
                                     super::super::super::super::exports::kaivo::upstream::types::HttpResponse {
-                                        status: l25 as u16,
-                                        headers: result37,
+                                        status: l33 as u16,
+                                        headers: result45,
                                         body: <_ as From<
                                             _rt::Vec<_>,
-                                        >>::from(_rt::Vec::from_raw_parts(l38.cast(), len40, len40)),
+                                        >>::from(_rt::Vec::from_raw_parts(l46.cast(), len48, len48)),
                                     }
                                 };
-                                result41.push(e41);
+                                result49.push(e49);
                             }
                             _rt::cabi_dealloc(
-                                base41,
-                                len41 * (5 * ::core::mem::size_of::<*const u8>()),
+                                base49,
+                                len49 * (5 * ::core::mem::size_of::<*const u8>()),
                                 ::core::mem::size_of::<*const u8>(),
                             );
                             T_::create_payment(super::super::super::super::exports::kaivo::upstream::types::CreateCall {
@@ -1248,594 +1262,638 @@ pub mod exports {
                                         }
                                         _ => _rt::invalid_enum_discriminant(),
                                     },
+                                    client_ip: match l23 {
+                                        0 => None,
+                                        1 => {
+                                            let e = {
+                                                let l24 = *arg0
+                                                    .add(17 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l25 = *arg0
+                                                    .add(18 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len26 = l25;
+                                                let bytes26 = _rt::Vec::from_raw_parts(
+                                                    l24.cast(),
+                                                    len26,
+                                                    len26,
+                                                );
+                                                _rt::string_lift(bytes26)
+                                            };
+                                            Some(e)
+                                        }
+                                        _ => _rt::invalid_enum_discriminant(),
+                                    },
+                                    device: match l27 {
+                                        0 => None,
+                                        1 => {
+                                            let e = {
+                                                let l28 = *arg0
+                                                    .add(20 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l29 = *arg0
+                                                    .add(21 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len30 = l29;
+                                                let bytes30 = _rt::Vec::from_raw_parts(
+                                                    l28.cast(),
+                                                    len30,
+                                                    len30,
+                                                );
+                                                _rt::string_lift(bytes30)
+                                            };
+                                            Some(e)
+                                        }
+                                        _ => _rt::invalid_enum_discriminant(),
+                                    },
                                 },
-                                responses: result41,
+                                responses: result49,
                             })
                         };
                         _rt::cabi_dealloc(
                             arg0,
-                            18 * ::core::mem::size_of::<*const u8>(),
+                            24 * ::core::mem::size_of::<*const u8>(),
                             ::core::mem::size_of::<*const u8>(),
                         );
-                        let ptr43 = (&raw mut _RET_AREA.0).cast::<u8>();
-                        use super::super::super::super::exports::kaivo::upstream::types::Step as V93;
-                        match result42 {
-                            V93::Request(e) => {
-                                *ptr43.add(0).cast::<u8>() = (0i32) as u8;
+                        let ptr51 = (&raw mut _RET_AREA.0).cast::<u8>();
+                        use super::super::super::super::exports::kaivo::upstream::types::Step as V101;
+                        match result50 {
+                            V101::Request(e) => {
+                                *ptr51.add(0).cast::<u8>() = (0i32) as u8;
                                 let super::super::super::super::exports::kaivo::upstream::types::HttpRequest {
-                                    method: method44,
-                                    url: url44,
-                                    headers: headers44,
-                                    body: body44,
+                                    method: method52,
+                                    url: url52,
+                                    headers: headers52,
+                                    body: body52,
                                 } = e;
-                                let vec45 = (method44.into_bytes()).into_boxed_slice();
-                                let ptr45 = vec45.as_ptr().cast::<u8>();
-                                let len45 = vec45.len();
-                                ::core::mem::forget(vec45);
-                                *ptr43
+                                let vec53 = (method52.into_bytes()).into_boxed_slice();
+                                let ptr53 = vec53.as_ptr().cast::<u8>();
+                                let len53 = vec53.len();
+                                ::core::mem::forget(vec53);
+                                *ptr51
                                     .add(8 + 1 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<usize>() = len45;
-                                *ptr43.add(8).cast::<*mut u8>() = ptr45.cast_mut();
-                                let vec46 = (url44.into_bytes()).into_boxed_slice();
-                                let ptr46 = vec46.as_ptr().cast::<u8>();
-                                let len46 = vec46.len();
-                                ::core::mem::forget(vec46);
-                                *ptr43
+                                    .cast::<usize>() = len53;
+                                *ptr51.add(8).cast::<*mut u8>() = ptr53.cast_mut();
+                                let vec54 = (url52.into_bytes()).into_boxed_slice();
+                                let ptr54 = vec54.as_ptr().cast::<u8>();
+                                let len54 = vec54.len();
+                                ::core::mem::forget(vec54);
+                                *ptr51
                                     .add(8 + 3 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<usize>() = len46;
-                                *ptr43
+                                    .cast::<usize>() = len54;
+                                *ptr51
                                     .add(8 + 2 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<*mut u8>() = ptr46.cast_mut();
-                                let vec51 = headers44;
-                                let len51 = vec51.len();
-                                let layout51 = _rt::alloc::Layout::from_size_align(
-                                        vec51.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                                    .cast::<*mut u8>() = ptr54.cast_mut();
+                                let vec59 = headers52;
+                                let len59 = vec59.len();
+                                let layout59 = _rt::alloc::Layout::from_size_align(
+                                        vec59.len() * (4 * ::core::mem::size_of::<*const u8>()),
                                         ::core::mem::size_of::<*const u8>(),
                                     )
                                     .unwrap();
-                                let (result51, _cleanup51) = wit_bindgen::rt::Cleanup::new(
-                                    layout51,
+                                let (result59, _cleanup59) = wit_bindgen::rt::Cleanup::new(
+                                    layout59,
                                 );
-                                if let Some(cleanup) = _cleanup51 {
+                                if let Some(cleanup) = _cleanup59 {
                                     cleanup.forget();
                                 }
-                                for (i, e) in vec51.into_iter().enumerate() {
-                                    let base = result51
+                                for (i, e) in vec59.into_iter().enumerate() {
+                                    let base = result59
                                         .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                                     {
-                                        let (t47_0, t47_1) = e;
-                                        let vec48 = (t47_0.into_bytes()).into_boxed_slice();
-                                        let ptr48 = vec48.as_ptr().cast::<u8>();
-                                        let len48 = vec48.len();
-                                        ::core::mem::forget(vec48);
+                                        let (t55_0, t55_1) = e;
+                                        let vec56 = (t55_0.into_bytes()).into_boxed_slice();
+                                        let ptr56 = vec56.as_ptr().cast::<u8>();
+                                        let len56 = vec56.len();
+                                        ::core::mem::forget(vec56);
                                         *base
                                             .add(::core::mem::size_of::<*const u8>())
-                                            .cast::<usize>() = len48;
-                                        *base.add(0).cast::<*mut u8>() = ptr48.cast_mut();
-                                        let vec50 = t47_1;
-                                        let len50 = vec50.len();
-                                        let layout50 = _rt::alloc::Layout::from_size_align(
-                                                vec50.len() * (2 * ::core::mem::size_of::<*const u8>()),
+                                            .cast::<usize>() = len56;
+                                        *base.add(0).cast::<*mut u8>() = ptr56.cast_mut();
+                                        let vec58 = t55_1;
+                                        let len58 = vec58.len();
+                                        let layout58 = _rt::alloc::Layout::from_size_align(
+                                                vec58.len() * (2 * ::core::mem::size_of::<*const u8>()),
                                                 ::core::mem::size_of::<*const u8>(),
                                             )
                                             .unwrap();
-                                        let (result50, _cleanup50) = wit_bindgen::rt::Cleanup::new(
-                                            layout50,
+                                        let (result58, _cleanup58) = wit_bindgen::rt::Cleanup::new(
+                                            layout58,
                                         );
-                                        if let Some(cleanup) = _cleanup50 {
+                                        if let Some(cleanup) = _cleanup58 {
                                             cleanup.forget();
                                         }
-                                        for (i, e) in vec50.into_iter().enumerate() {
-                                            let base = result50
+                                        for (i, e) in vec58.into_iter().enumerate() {
+                                            let base = result58
                                                 .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                             {
-                                                let vec49 = (e.into_bytes()).into_boxed_slice();
-                                                let ptr49 = vec49.as_ptr().cast::<u8>();
-                                                let len49 = vec49.len();
-                                                ::core::mem::forget(vec49);
+                                                let vec57 = (e.into_bytes()).into_boxed_slice();
+                                                let ptr57 = vec57.as_ptr().cast::<u8>();
+                                                let len57 = vec57.len();
+                                                ::core::mem::forget(vec57);
                                                 *base
                                                     .add(::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len49;
-                                                *base.add(0).cast::<*mut u8>() = ptr49.cast_mut();
+                                                    .cast::<usize>() = len57;
+                                                *base.add(0).cast::<*mut u8>() = ptr57.cast_mut();
                                             }
                                         }
                                         *base
                                             .add(3 * ::core::mem::size_of::<*const u8>())
-                                            .cast::<usize>() = len50;
+                                            .cast::<usize>() = len58;
                                         *base
                                             .add(2 * ::core::mem::size_of::<*const u8>())
-                                            .cast::<*mut u8>() = result50;
+                                            .cast::<*mut u8>() = result58;
                                     }
                                 }
-                                *ptr43
+                                *ptr51
                                     .add(8 + 5 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<usize>() = len51;
-                                *ptr43
+                                    .cast::<usize>() = len59;
+                                *ptr51
                                     .add(8 + 4 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<*mut u8>() = result51;
-                                let vec52 = <_ as Into<_rt::Vec<_>>>::into(body44)
+                                    .cast::<*mut u8>() = result59;
+                                let vec60 = <_ as Into<_rt::Vec<_>>>::into(body52)
                                     .into_boxed_slice();
-                                let ptr52 = vec52.as_ptr().cast::<u8>();
-                                let len52 = vec52.len();
-                                ::core::mem::forget(vec52);
-                                *ptr43
+                                let ptr60 = vec60.as_ptr().cast::<u8>();
+                                let len60 = vec60.len();
+                                ::core::mem::forget(vec60);
+                                *ptr51
                                     .add(8 + 7 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<usize>() = len52;
-                                *ptr43
+                                    .cast::<usize>() = len60;
+                                *ptr51
                                     .add(8 + 6 * ::core::mem::size_of::<*const u8>())
-                                    .cast::<*mut u8>() = ptr52.cast_mut();
+                                    .cast::<*mut u8>() = ptr60.cast_mut();
                             }
-                            V93::Result(e) => {
-                                *ptr43.add(0).cast::<u8>() = (1i32) as u8;
-                                use super::super::super::super::exports::kaivo::upstream::types::OperationResult as V92;
+                            V101::Result(e) => {
+                                *ptr51.add(0).cast::<u8>() = (1i32) as u8;
+                                use super::super::super::super::exports::kaivo::upstream::types::OperationResult as V100;
                                 match e {
-                                    V92::Completed(e) => {
-                                        *ptr43.add(8).cast::<u8>() = (0i32) as u8;
+                                    V100::Completed(e) => {
+                                        *ptr51.add(8).cast::<u8>() = (0i32) as u8;
                                         let super::super::super::super::exports::kaivo::upstream::types::Completion {
-                                            value: value53,
-                                            code: code53,
+                                            value: value61,
+                                            code: code61,
                                         } = e;
-                                        use super::super::super::super::exports::kaivo::upstream::types::Output as V87;
-                                        match value53 {
-                                            V87::Payment(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (0i32) as u8;
+                                        use super::super::super::super::exports::kaivo::upstream::types::Output as V95;
+                                        match value61 {
+                                            V95::Payment(e) => {
+                                                *ptr51.add(16).cast::<u8>() = (0i32) as u8;
                                                 let super::super::super::super::exports::kaivo::upstream::types::PaymentOutput {
-                                                    order_id: order_id54,
-                                                    upstream_id: upstream_id54,
-                                                    money: money54,
-                                                    status: status54,
-                                                    url: url54,
-                                                    qrcode: qrcode54,
-                                                    paid_at: paid_at54,
-                                                    expires_at: expires_at54,
+                                                    order_id: order_id62,
+                                                    upstream_id: upstream_id62,
+                                                    money: money62,
+                                                    status: status62,
+                                                    url: url62,
+                                                    qrcode: qrcode62,
+                                                    paid_at: paid_at62,
+                                                    expires_at: expires_at62,
                                                 } = e;
-                                                let vec55 = (order_id54.into_bytes()).into_boxed_slice();
-                                                let ptr55 = vec55.as_ptr().cast::<u8>();
-                                                let len55 = vec55.len();
-                                                ::core::mem::forget(vec55);
-                                                *ptr43
+                                                let vec63 = (order_id62.into_bytes()).into_boxed_slice();
+                                                let ptr63 = vec63.as_ptr().cast::<u8>();
+                                                let len63 = vec63.len();
+                                                ::core::mem::forget(vec63);
+                                                *ptr51
                                                     .add(24 + 1 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len55;
-                                                *ptr43.add(24).cast::<*mut u8>() = ptr55.cast_mut();
-                                                let vec56 = (upstream_id54.into_bytes()).into_boxed_slice();
-                                                let ptr56 = vec56.as_ptr().cast::<u8>();
-                                                let len56 = vec56.len();
-                                                ::core::mem::forget(vec56);
-                                                *ptr43
+                                                    .cast::<usize>() = len63;
+                                                *ptr51.add(24).cast::<*mut u8>() = ptr63.cast_mut();
+                                                let vec64 = (upstream_id62.into_bytes()).into_boxed_slice();
+                                                let ptr64 = vec64.as_ptr().cast::<u8>();
+                                                let len64 = vec64.len();
+                                                ::core::mem::forget(vec64);
+                                                *ptr51
                                                     .add(24 + 3 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len56;
-                                                *ptr43
+                                                    .cast::<usize>() = len64;
+                                                *ptr51
                                                     .add(24 + 2 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr56.cast_mut();
+                                                    .cast::<*mut u8>() = ptr64.cast_mut();
                                                 let super::super::super::super::exports::kaivo::upstream::types::Money {
-                                                    amount: amount57,
-                                                    currency: currency57,
-                                                } = money54;
-                                                let vec58 = (amount57.into_bytes()).into_boxed_slice();
-                                                let ptr58 = vec58.as_ptr().cast::<u8>();
-                                                let len58 = vec58.len();
-                                                ::core::mem::forget(vec58);
-                                                *ptr43
-                                                    .add(24 + 5 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len58;
-                                                *ptr43
-                                                    .add(24 + 4 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr58.cast_mut();
-                                                let vec59 = (currency57.into_bytes()).into_boxed_slice();
-                                                let ptr59 = vec59.as_ptr().cast::<u8>();
-                                                let len59 = vec59.len();
-                                                ::core::mem::forget(vec59);
-                                                *ptr43
-                                                    .add(24 + 7 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len59;
-                                                *ptr43
-                                                    .add(24 + 6 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr59.cast_mut();
-                                                *ptr43
-                                                    .add(24 + 8 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<u8>() = (status54.clone() as i32) as u8;
-                                                match url54 {
-                                                    Some(e) => {
-                                                        *ptr43
-                                                            .add(24 + 9 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (1i32) as u8;
-                                                        let vec60 = (e.into_bytes()).into_boxed_slice();
-                                                        let ptr60 = vec60.as_ptr().cast::<u8>();
-                                                        let len60 = vec60.len();
-                                                        ::core::mem::forget(vec60);
-                                                        *ptr43
-                                                            .add(24 + 11 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<usize>() = len60;
-                                                        *ptr43
-                                                            .add(24 + 10 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<*mut u8>() = ptr60.cast_mut();
-                                                    }
-                                                    None => {
-                                                        *ptr43
-                                                            .add(24 + 9 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (0i32) as u8;
-                                                    }
-                                                };
-                                                match qrcode54 {
-                                                    Some(e) => {
-                                                        *ptr43
-                                                            .add(24 + 12 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (1i32) as u8;
-                                                        let vec61 = (e.into_bytes()).into_boxed_slice();
-                                                        let ptr61 = vec61.as_ptr().cast::<u8>();
-                                                        let len61 = vec61.len();
-                                                        ::core::mem::forget(vec61);
-                                                        *ptr43
-                                                            .add(24 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<usize>() = len61;
-                                                        *ptr43
-                                                            .add(24 + 13 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<*mut u8>() = ptr61.cast_mut();
-                                                    }
-                                                    None => {
-                                                        *ptr43
-                                                            .add(24 + 12 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (0i32) as u8;
-                                                    }
-                                                };
-                                                match paid_at54 {
-                                                    Some(e) => {
-                                                        *ptr43
-                                                            .add(32 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (1i32) as u8;
-                                                        let super::super::super::super::kaivo::upstream::host::UtcTime {
-                                                            seconds: seconds62,
-                                                            nanos: nanos62,
-                                                        } = e;
-                                                        *ptr43
-                                                            .add(40 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<i64>() = _rt::as_i64(seconds62);
-                                                        *ptr43
-                                                            .add(48 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<i32>() = _rt::as_i32(nanos62);
-                                                    }
-                                                    None => {
-                                                        *ptr43
-                                                            .add(32 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (0i32) as u8;
-                                                    }
-                                                };
-                                                match expires_at54 {
-                                                    Some(e) => {
-                                                        *ptr43
-                                                            .add(56 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (1i32) as u8;
-                                                        let super::super::super::super::kaivo::upstream::host::UtcTime {
-                                                            seconds: seconds63,
-                                                            nanos: nanos63,
-                                                        } = e;
-                                                        *ptr43
-                                                            .add(64 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<i64>() = _rt::as_i64(seconds63);
-                                                        *ptr43
-                                                            .add(72 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<i32>() = _rt::as_i32(nanos63);
-                                                    }
-                                                    None => {
-                                                        *ptr43
-                                                            .add(56 + 14 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<u8>() = (0i32) as u8;
-                                                    }
-                                                };
-                                            }
-                                            V87::Refund(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (1i32) as u8;
-                                                let super::super::super::super::exports::kaivo::upstream::types::RefundOutput {
-                                                    order_id: order_id64,
-                                                    refund_id: refund_id64,
-                                                    upstream_refund_id: upstream_refund_id64,
-                                                    money: money64,
-                                                    status: status64,
-                                                } = e;
-                                                let vec65 = (order_id64.into_bytes()).into_boxed_slice();
-                                                let ptr65 = vec65.as_ptr().cast::<u8>();
-                                                let len65 = vec65.len();
-                                                ::core::mem::forget(vec65);
-                                                *ptr43
-                                                    .add(24 + 1 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len65;
-                                                *ptr43.add(24).cast::<*mut u8>() = ptr65.cast_mut();
-                                                let vec66 = (refund_id64.into_bytes()).into_boxed_slice();
+                                                    amount: amount65,
+                                                    currency: currency65,
+                                                } = money62;
+                                                let vec66 = (amount65.into_bytes()).into_boxed_slice();
                                                 let ptr66 = vec66.as_ptr().cast::<u8>();
                                                 let len66 = vec66.len();
                                                 ::core::mem::forget(vec66);
-                                                *ptr43
-                                                    .add(24 + 3 * ::core::mem::size_of::<*const u8>())
+                                                *ptr51
+                                                    .add(24 + 5 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>() = len66;
-                                                *ptr43
-                                                    .add(24 + 2 * ::core::mem::size_of::<*const u8>())
+                                                *ptr51
+                                                    .add(24 + 4 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<*mut u8>() = ptr66.cast_mut();
-                                                let vec67 = (upstream_refund_id64.into_bytes())
-                                                    .into_boxed_slice();
+                                                let vec67 = (currency65.into_bytes()).into_boxed_slice();
                                                 let ptr67 = vec67.as_ptr().cast::<u8>();
                                                 let len67 = vec67.len();
                                                 ::core::mem::forget(vec67);
-                                                *ptr43
-                                                    .add(24 + 5 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len67;
-                                                *ptr43
-                                                    .add(24 + 4 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr67.cast_mut();
-                                                let super::super::super::super::exports::kaivo::upstream::types::Money {
-                                                    amount: amount68,
-                                                    currency: currency68,
-                                                } = money64;
-                                                let vec69 = (amount68.into_bytes()).into_boxed_slice();
-                                                let ptr69 = vec69.as_ptr().cast::<u8>();
-                                                let len69 = vec69.len();
-                                                ::core::mem::forget(vec69);
-                                                *ptr43
+                                                *ptr51
                                                     .add(24 + 7 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len69;
-                                                *ptr43
+                                                    .cast::<usize>() = len67;
+                                                *ptr51
                                                     .add(24 + 6 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr69.cast_mut();
-                                                let vec70 = (currency68.into_bytes()).into_boxed_slice();
-                                                let ptr70 = vec70.as_ptr().cast::<u8>();
-                                                let len70 = vec70.len();
-                                                ::core::mem::forget(vec70);
-                                                *ptr43
-                                                    .add(24 + 9 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len70;
-                                                *ptr43
+                                                    .cast::<*mut u8>() = ptr67.cast_mut();
+                                                *ptr51
                                                     .add(24 + 8 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr70.cast_mut();
-                                                *ptr43
-                                                    .add(24 + 10 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<u8>() = (status64.clone() as i32) as u8;
+                                                    .cast::<u8>() = (status62.clone() as i32) as u8;
+                                                match url62 {
+                                                    Some(e) => {
+                                                        *ptr51
+                                                            .add(24 + 9 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (1i32) as u8;
+                                                        let vec68 = (e.into_bytes()).into_boxed_slice();
+                                                        let ptr68 = vec68.as_ptr().cast::<u8>();
+                                                        let len68 = vec68.len();
+                                                        ::core::mem::forget(vec68);
+                                                        *ptr51
+                                                            .add(24 + 11 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<usize>() = len68;
+                                                        *ptr51
+                                                            .add(24 + 10 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<*mut u8>() = ptr68.cast_mut();
+                                                    }
+                                                    None => {
+                                                        *ptr51
+                                                            .add(24 + 9 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (0i32) as u8;
+                                                    }
+                                                };
+                                                match qrcode62 {
+                                                    Some(e) => {
+                                                        *ptr51
+                                                            .add(24 + 12 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (1i32) as u8;
+                                                        let vec69 = (e.into_bytes()).into_boxed_slice();
+                                                        let ptr69 = vec69.as_ptr().cast::<u8>();
+                                                        let len69 = vec69.len();
+                                                        ::core::mem::forget(vec69);
+                                                        *ptr51
+                                                            .add(24 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<usize>() = len69;
+                                                        *ptr51
+                                                            .add(24 + 13 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<*mut u8>() = ptr69.cast_mut();
+                                                    }
+                                                    None => {
+                                                        *ptr51
+                                                            .add(24 + 12 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (0i32) as u8;
+                                                    }
+                                                };
+                                                match paid_at62 {
+                                                    Some(e) => {
+                                                        *ptr51
+                                                            .add(32 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (1i32) as u8;
+                                                        let super::super::super::super::kaivo::upstream::host::UtcTime {
+                                                            seconds: seconds70,
+                                                            nanos: nanos70,
+                                                        } = e;
+                                                        *ptr51
+                                                            .add(40 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<i64>() = _rt::as_i64(seconds70);
+                                                        *ptr51
+                                                            .add(48 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<i32>() = _rt::as_i32(nanos70);
+                                                    }
+                                                    None => {
+                                                        *ptr51
+                                                            .add(32 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (0i32) as u8;
+                                                    }
+                                                };
+                                                match expires_at62 {
+                                                    Some(e) => {
+                                                        *ptr51
+                                                            .add(56 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (1i32) as u8;
+                                                        let super::super::super::super::kaivo::upstream::host::UtcTime {
+                                                            seconds: seconds71,
+                                                            nanos: nanos71,
+                                                        } = e;
+                                                        *ptr51
+                                                            .add(64 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<i64>() = _rt::as_i64(seconds71);
+                                                        *ptr51
+                                                            .add(72 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<i32>() = _rt::as_i32(nanos71);
+                                                    }
+                                                    None => {
+                                                        *ptr51
+                                                            .add(56 + 14 * ::core::mem::size_of::<*const u8>())
+                                                            .cast::<u8>() = (0i32) as u8;
+                                                    }
+                                                };
                                             }
-                                            V87::Route(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (2i32) as u8;
-                                                let super::super::super::super::exports::kaivo::upstream::types::RouteCallbackOutput {
-                                                    order_id: order_id71,
+                                            V95::Refund(e) => {
+                                                *ptr51.add(16).cast::<u8>() = (1i32) as u8;
+                                                let super::super::super::super::exports::kaivo::upstream::types::RefundOutput {
+                                                    order_id: order_id72,
+                                                    refund_id: refund_id72,
+                                                    upstream_refund_id: upstream_refund_id72,
+                                                    money: money72,
+                                                    status: status72,
                                                 } = e;
-                                                let vec72 = (order_id71.into_bytes()).into_boxed_slice();
-                                                let ptr72 = vec72.as_ptr().cast::<u8>();
-                                                let len72 = vec72.len();
-                                                ::core::mem::forget(vec72);
-                                                *ptr43
+                                                let vec73 = (order_id72.into_bytes()).into_boxed_slice();
+                                                let ptr73 = vec73.as_ptr().cast::<u8>();
+                                                let len73 = vec73.len();
+                                                ::core::mem::forget(vec73);
+                                                *ptr51
                                                     .add(24 + 1 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len72;
-                                                *ptr43.add(24).cast::<*mut u8>() = ptr72.cast_mut();
-                                            }
-                                            V87::Callback(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (3i32) as u8;
-                                                let super::super::super::super::exports::kaivo::upstream::types::CallbackOutput {
-                                                    event_id: event_id73,
-                                                    order_id: order_id73,
-                                                    upstream_id: upstream_id73,
-                                                    money: money73,
-                                                    status: status73,
-                                                    ack: ack73,
-                                                } = e;
-                                                let vec74 = (event_id73.into_bytes()).into_boxed_slice();
+                                                    .cast::<usize>() = len73;
+                                                *ptr51.add(24).cast::<*mut u8>() = ptr73.cast_mut();
+                                                let vec74 = (refund_id72.into_bytes()).into_boxed_slice();
                                                 let ptr74 = vec74.as_ptr().cast::<u8>();
                                                 let len74 = vec74.len();
                                                 ::core::mem::forget(vec74);
-                                                *ptr43
-                                                    .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                *ptr51
+                                                    .add(24 + 3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>() = len74;
-                                                *ptr43.add(24).cast::<*mut u8>() = ptr74.cast_mut();
-                                                let vec75 = (order_id73.into_bytes()).into_boxed_slice();
+                                                *ptr51
+                                                    .add(24 + 2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr74.cast_mut();
+                                                let vec75 = (upstream_refund_id72.into_bytes())
+                                                    .into_boxed_slice();
                                                 let ptr75 = vec75.as_ptr().cast::<u8>();
                                                 let len75 = vec75.len();
                                                 ::core::mem::forget(vec75);
-                                                *ptr43
-                                                    .add(24 + 3 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len75;
-                                                *ptr43
-                                                    .add(24 + 2 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr75.cast_mut();
-                                                let vec76 = (upstream_id73.into_bytes()).into_boxed_slice();
-                                                let ptr76 = vec76.as_ptr().cast::<u8>();
-                                                let len76 = vec76.len();
-                                                ::core::mem::forget(vec76);
-                                                *ptr43
+                                                *ptr51
                                                     .add(24 + 5 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len76;
-                                                *ptr43
+                                                    .cast::<usize>() = len75;
+                                                *ptr51
                                                     .add(24 + 4 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr76.cast_mut();
+                                                    .cast::<*mut u8>() = ptr75.cast_mut();
                                                 let super::super::super::super::exports::kaivo::upstream::types::Money {
-                                                    amount: amount77,
-                                                    currency: currency77,
-                                                } = money73;
-                                                let vec78 = (amount77.into_bytes()).into_boxed_slice();
+                                                    amount: amount76,
+                                                    currency: currency76,
+                                                } = money72;
+                                                let vec77 = (amount76.into_bytes()).into_boxed_slice();
+                                                let ptr77 = vec77.as_ptr().cast::<u8>();
+                                                let len77 = vec77.len();
+                                                ::core::mem::forget(vec77);
+                                                *ptr51
+                                                    .add(24 + 7 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len77;
+                                                *ptr51
+                                                    .add(24 + 6 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr77.cast_mut();
+                                                let vec78 = (currency76.into_bytes()).into_boxed_slice();
                                                 let ptr78 = vec78.as_ptr().cast::<u8>();
                                                 let len78 = vec78.len();
                                                 ::core::mem::forget(vec78);
-                                                *ptr43
-                                                    .add(24 + 7 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len78;
-                                                *ptr43
-                                                    .add(24 + 6 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr78.cast_mut();
-                                                let vec79 = (currency77.into_bytes()).into_boxed_slice();
-                                                let ptr79 = vec79.as_ptr().cast::<u8>();
-                                                let len79 = vec79.len();
-                                                ::core::mem::forget(vec79);
-                                                *ptr43
+                                                *ptr51
                                                     .add(24 + 9 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len79;
-                                                *ptr43
+                                                    .cast::<usize>() = len78;
+                                                *ptr51
                                                     .add(24 + 8 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr79.cast_mut();
-                                                *ptr43
+                                                    .cast::<*mut u8>() = ptr78.cast_mut();
+                                                *ptr51
                                                     .add(24 + 10 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<u8>() = (status73.clone() as i32) as u8;
+                                                    .cast::<u8>() = (status72.clone() as i32) as u8;
+                                            }
+                                            V95::Route(e) => {
+                                                *ptr51.add(16).cast::<u8>() = (2i32) as u8;
+                                                let super::super::super::super::exports::kaivo::upstream::types::RouteCallbackOutput {
+                                                    order_id: order_id79,
+                                                } = e;
+                                                let vec80 = (order_id79.into_bytes()).into_boxed_slice();
+                                                let ptr80 = vec80.as_ptr().cast::<u8>();
+                                                let len80 = vec80.len();
+                                                ::core::mem::forget(vec80);
+                                                *ptr51
+                                                    .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len80;
+                                                *ptr51.add(24).cast::<*mut u8>() = ptr80.cast_mut();
+                                            }
+                                            V95::Callback(e) => {
+                                                *ptr51.add(16).cast::<u8>() = (3i32) as u8;
+                                                let super::super::super::super::exports::kaivo::upstream::types::CallbackOutput {
+                                                    event_id: event_id81,
+                                                    order_id: order_id81,
+                                                    upstream_id: upstream_id81,
+                                                    money: money81,
+                                                    status: status81,
+                                                    ack: ack81,
+                                                } = e;
+                                                let vec82 = (event_id81.into_bytes()).into_boxed_slice();
+                                                let ptr82 = vec82.as_ptr().cast::<u8>();
+                                                let len82 = vec82.len();
+                                                ::core::mem::forget(vec82);
+                                                *ptr51
+                                                    .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len82;
+                                                *ptr51.add(24).cast::<*mut u8>() = ptr82.cast_mut();
+                                                let vec83 = (order_id81.into_bytes()).into_boxed_slice();
+                                                let ptr83 = vec83.as_ptr().cast::<u8>();
+                                                let len83 = vec83.len();
+                                                ::core::mem::forget(vec83);
+                                                *ptr51
+                                                    .add(24 + 3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len83;
+                                                *ptr51
+                                                    .add(24 + 2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr83.cast_mut();
+                                                let vec84 = (upstream_id81.into_bytes()).into_boxed_slice();
+                                                let ptr84 = vec84.as_ptr().cast::<u8>();
+                                                let len84 = vec84.len();
+                                                ::core::mem::forget(vec84);
+                                                *ptr51
+                                                    .add(24 + 5 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len84;
+                                                *ptr51
+                                                    .add(24 + 4 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr84.cast_mut();
+                                                let super::super::super::super::exports::kaivo::upstream::types::Money {
+                                                    amount: amount85,
+                                                    currency: currency85,
+                                                } = money81;
+                                                let vec86 = (amount85.into_bytes()).into_boxed_slice();
+                                                let ptr86 = vec86.as_ptr().cast::<u8>();
+                                                let len86 = vec86.len();
+                                                ::core::mem::forget(vec86);
+                                                *ptr51
+                                                    .add(24 + 7 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len86;
+                                                *ptr51
+                                                    .add(24 + 6 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr86.cast_mut();
+                                                let vec87 = (currency85.into_bytes()).into_boxed_slice();
+                                                let ptr87 = vec87.as_ptr().cast::<u8>();
+                                                let len87 = vec87.len();
+                                                ::core::mem::forget(vec87);
+                                                *ptr51
+                                                    .add(24 + 9 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>() = len87;
+                                                *ptr51
+                                                    .add(24 + 8 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>() = ptr87.cast_mut();
+                                                *ptr51
+                                                    .add(24 + 10 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<u8>() = (status81.clone() as i32) as u8;
                                                 let super::super::super::super::exports::kaivo::upstream::types::HttpResponse {
-                                                    status: status80,
-                                                    headers: headers80,
-                                                    body: body80,
-                                                } = ack73;
-                                                *ptr43
+                                                    status: status88,
+                                                    headers: headers88,
+                                                    body: body88,
+                                                } = ack81;
+                                                *ptr51
                                                     .add(24 + 11 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<u16>() = (_rt::as_i32(status80)) as u16;
-                                                let vec85 = headers80;
-                                                let len85 = vec85.len();
-                                                let layout85 = _rt::alloc::Layout::from_size_align(
-                                                        vec85.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                                                    .cast::<u16>() = (_rt::as_i32(status88)) as u16;
+                                                let vec93 = headers88;
+                                                let len93 = vec93.len();
+                                                let layout93 = _rt::alloc::Layout::from_size_align(
+                                                        vec93.len() * (4 * ::core::mem::size_of::<*const u8>()),
                                                         ::core::mem::size_of::<*const u8>(),
                                                     )
                                                     .unwrap();
-                                                let (result85, _cleanup85) = wit_bindgen::rt::Cleanup::new(
-                                                    layout85,
+                                                let (result93, _cleanup93) = wit_bindgen::rt::Cleanup::new(
+                                                    layout93,
                                                 );
-                                                if let Some(cleanup) = _cleanup85 {
+                                                if let Some(cleanup) = _cleanup93 {
                                                     cleanup.forget();
                                                 }
-                                                for (i, e) in vec85.into_iter().enumerate() {
-                                                    let base = result85
+                                                for (i, e) in vec93.into_iter().enumerate() {
+                                                    let base = result93
                                                         .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                                                     {
-                                                        let (t81_0, t81_1) = e;
-                                                        let vec82 = (t81_0.into_bytes()).into_boxed_slice();
-                                                        let ptr82 = vec82.as_ptr().cast::<u8>();
-                                                        let len82 = vec82.len();
-                                                        ::core::mem::forget(vec82);
+                                                        let (t89_0, t89_1) = e;
+                                                        let vec90 = (t89_0.into_bytes()).into_boxed_slice();
+                                                        let ptr90 = vec90.as_ptr().cast::<u8>();
+                                                        let len90 = vec90.len();
+                                                        ::core::mem::forget(vec90);
                                                         *base
                                                             .add(::core::mem::size_of::<*const u8>())
-                                                            .cast::<usize>() = len82;
-                                                        *base.add(0).cast::<*mut u8>() = ptr82.cast_mut();
-                                                        let vec84 = t81_1;
-                                                        let len84 = vec84.len();
-                                                        let layout84 = _rt::alloc::Layout::from_size_align(
-                                                                vec84.len() * (2 * ::core::mem::size_of::<*const u8>()),
+                                                            .cast::<usize>() = len90;
+                                                        *base.add(0).cast::<*mut u8>() = ptr90.cast_mut();
+                                                        let vec92 = t89_1;
+                                                        let len92 = vec92.len();
+                                                        let layout92 = _rt::alloc::Layout::from_size_align(
+                                                                vec92.len() * (2 * ::core::mem::size_of::<*const u8>()),
                                                                 ::core::mem::size_of::<*const u8>(),
                                                             )
                                                             .unwrap();
-                                                        let (result84, _cleanup84) = wit_bindgen::rt::Cleanup::new(
-                                                            layout84,
+                                                        let (result92, _cleanup92) = wit_bindgen::rt::Cleanup::new(
+                                                            layout92,
                                                         );
-                                                        if let Some(cleanup) = _cleanup84 {
+                                                        if let Some(cleanup) = _cleanup92 {
                                                             cleanup.forget();
                                                         }
-                                                        for (i, e) in vec84.into_iter().enumerate() {
-                                                            let base = result84
+                                                        for (i, e) in vec92.into_iter().enumerate() {
+                                                            let base = result92
                                                                 .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                                             {
-                                                                let vec83 = (e.into_bytes()).into_boxed_slice();
-                                                                let ptr83 = vec83.as_ptr().cast::<u8>();
-                                                                let len83 = vec83.len();
-                                                                ::core::mem::forget(vec83);
+                                                                let vec91 = (e.into_bytes()).into_boxed_slice();
+                                                                let ptr91 = vec91.as_ptr().cast::<u8>();
+                                                                let len91 = vec91.len();
+                                                                ::core::mem::forget(vec91);
                                                                 *base
                                                                     .add(::core::mem::size_of::<*const u8>())
-                                                                    .cast::<usize>() = len83;
-                                                                *base.add(0).cast::<*mut u8>() = ptr83.cast_mut();
+                                                                    .cast::<usize>() = len91;
+                                                                *base.add(0).cast::<*mut u8>() = ptr91.cast_mut();
                                                             }
                                                         }
                                                         *base
                                                             .add(3 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<usize>() = len84;
+                                                            .cast::<usize>() = len92;
                                                         *base
                                                             .add(2 * ::core::mem::size_of::<*const u8>())
-                                                            .cast::<*mut u8>() = result84;
+                                                            .cast::<*mut u8>() = result92;
                                                     }
                                                 }
-                                                *ptr43
+                                                *ptr51
                                                     .add(24 + 13 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len85;
-                                                *ptr43
+                                                    .cast::<usize>() = len93;
+                                                *ptr51
                                                     .add(24 + 12 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = result85;
-                                                let vec86 = <_ as Into<_rt::Vec<_>>>::into(body80)
+                                                    .cast::<*mut u8>() = result93;
+                                                let vec94 = <_ as Into<_rt::Vec<_>>>::into(body88)
                                                     .into_boxed_slice();
-                                                let ptr86 = vec86.as_ptr().cast::<u8>();
-                                                let len86 = vec86.len();
-                                                ::core::mem::forget(vec86);
-                                                *ptr43
+                                                let ptr94 = vec94.as_ptr().cast::<u8>();
+                                                let len94 = vec94.len();
+                                                ::core::mem::forget(vec94);
+                                                *ptr51
                                                     .add(24 + 15 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len86;
-                                                *ptr43
+                                                    .cast::<usize>() = len94;
+                                                *ptr51
                                                     .add(24 + 14 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr86.cast_mut();
+                                                    .cast::<*mut u8>() = ptr94.cast_mut();
                                             }
                                         }
-                                        match code53 {
+                                        match code61 {
                                             Some(e) => {
-                                                *ptr43
+                                                *ptr51
                                                     .add(80 + 14 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>() = (1i32) as u8;
-                                                let vec88 = (e.into_bytes()).into_boxed_slice();
-                                                let ptr88 = vec88.as_ptr().cast::<u8>();
-                                                let len88 = vec88.len();
-                                                ::core::mem::forget(vec88);
-                                                *ptr43
+                                                let vec96 = (e.into_bytes()).into_boxed_slice();
+                                                let ptr96 = vec96.as_ptr().cast::<u8>();
+                                                let len96 = vec96.len();
+                                                ::core::mem::forget(vec96);
+                                                *ptr51
                                                     .add(80 + 16 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len88;
-                                                *ptr43
+                                                    .cast::<usize>() = len96;
+                                                *ptr51
                                                     .add(80 + 15 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr88.cast_mut();
+                                                    .cast::<*mut u8>() = ptr96.cast_mut();
                                             }
                                             None => {
-                                                *ptr43
+                                                *ptr51
                                                     .add(80 + 14 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>() = (0i32) as u8;
                                             }
                                         };
                                     }
-                                    V92::Rejected(e) => {
-                                        *ptr43.add(8).cast::<u8>() = (1i32) as u8;
-                                        let vec89 = (e.into_bytes()).into_boxed_slice();
-                                        let ptr89 = vec89.as_ptr().cast::<u8>();
-                                        let len89 = vec89.len();
-                                        ::core::mem::forget(vec89);
-                                        *ptr43
+                                    V100::Rejected(e) => {
+                                        *ptr51.add(8).cast::<u8>() = (1i32) as u8;
+                                        let vec97 = (e.into_bytes()).into_boxed_slice();
+                                        let ptr97 = vec97.as_ptr().cast::<u8>();
+                                        let len97 = vec97.len();
+                                        ::core::mem::forget(vec97);
+                                        *ptr51
                                             .add(16 + 1 * ::core::mem::size_of::<*const u8>())
-                                            .cast::<usize>() = len89;
-                                        *ptr43.add(16).cast::<*mut u8>() = ptr89.cast_mut();
+                                            .cast::<usize>() = len97;
+                                        *ptr51.add(16).cast::<*mut u8>() = ptr97.cast_mut();
                                     }
-                                    V92::Unknown(e) => {
-                                        *ptr43.add(8).cast::<u8>() = (2i32) as u8;
+                                    V100::Unknown(e) => {
+                                        *ptr51.add(8).cast::<u8>() = (2i32) as u8;
                                         match e {
                                             Some(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (1i32) as u8;
-                                                let vec90 = (e.into_bytes()).into_boxed_slice();
-                                                let ptr90 = vec90.as_ptr().cast::<u8>();
-                                                let len90 = vec90.len();
-                                                ::core::mem::forget(vec90);
-                                                *ptr43
+                                                *ptr51.add(16).cast::<u8>() = (1i32) as u8;
+                                                let vec98 = (e.into_bytes()).into_boxed_slice();
+                                                let ptr98 = vec98.as_ptr().cast::<u8>();
+                                                let len98 = vec98.len();
+                                                ::core::mem::forget(vec98);
+                                                *ptr51
                                                     .add(16 + 2 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len90;
-                                                *ptr43
+                                                    .cast::<usize>() = len98;
+                                                *ptr51
                                                     .add(16 + 1 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr90.cast_mut();
+                                                    .cast::<*mut u8>() = ptr98.cast_mut();
                                             }
                                             None => {
-                                                *ptr43.add(16).cast::<u8>() = (0i32) as u8;
+                                                *ptr51.add(16).cast::<u8>() = (0i32) as u8;
                                             }
                                         };
                                     }
-                                    V92::Error(e) => {
-                                        *ptr43.add(8).cast::<u8>() = (3i32) as u8;
+                                    V100::Error(e) => {
+                                        *ptr51.add(8).cast::<u8>() = (3i32) as u8;
                                         match e {
                                             Some(e) => {
-                                                *ptr43.add(16).cast::<u8>() = (1i32) as u8;
-                                                let vec91 = (e.into_bytes()).into_boxed_slice();
-                                                let ptr91 = vec91.as_ptr().cast::<u8>();
-                                                let len91 = vec91.len();
-                                                ::core::mem::forget(vec91);
-                                                *ptr43
+                                                *ptr51.add(16).cast::<u8>() = (1i32) as u8;
+                                                let vec99 = (e.into_bytes()).into_boxed_slice();
+                                                let ptr99 = vec99.as_ptr().cast::<u8>();
+                                                let len99 = vec99.len();
+                                                ::core::mem::forget(vec99);
+                                                *ptr51
                                                     .add(16 + 2 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<usize>() = len91;
-                                                *ptr43
+                                                    .cast::<usize>() = len99;
+                                                *ptr51
                                                     .add(16 + 1 * ::core::mem::size_of::<*const u8>())
-                                                    .cast::<*mut u8>() = ptr91.cast_mut();
+                                                    .cast::<*mut u8>() = ptr99.cast_mut();
                                             }
                                             None => {
-                                                *ptr43.add(16).cast::<u8>() = (0i32) as u8;
+                                                *ptr51.add(16).cast::<u8>() = (0i32) as u8;
                                             }
                                         };
                                     }
                                 }
                             }
                         }
-                        ptr43
+                        ptr51
                     }
                 }
                 #[doc(hidden)]
@@ -9033,9 +9091,9 @@ macro_rules! __export_trade_plugin_impl {
         : () = { #[rustfmt::skip] #[cfg(target_arch = "wasm32")] #[unsafe (link_section =
         "component-type:wit-bindgen:0.63.0:kaivo:upstream@3.0.0:trade-plugin:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2234] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2253] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb7\x10\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xca\x10\x01A\x02\x01\
 A\x0d\x01B\x17\x01r\x02\x07secondsx\x05nanosy\x04\0\x08utc-time\x03\0\0\x01p}\x01\
 q\x02\x04data\x01\x02\0\x06secret\x01s\0\x04\0\x04part\x03\0\x03\x01@\x01\x04nam\
 es\0s\x04\0\x06config\x01\x05\x01ks\x01p\x04\x01@\x03\x09algorithms\x03key\x06\x05\
@@ -9048,43 +9106,43 @@ al\x01\x0a\x01o\x02ss\x01p\x0b\x01@\x03\x05levels\x07messages\x06fields\x0c\0\x7
 p\x03\x04\0\x07headers\x03\0\x04\x01r\x02\x06amounts\x08currencys\x04\0\x05money\
 \x03\0\x06\x01p}\x01r\x04\x06methods\x03urls\x07headers\x05\x04body\x08\x04\0\x0c\
 http-request\x03\0\x09\x01r\x03\x06status{\x07headers\x05\x04body\x08\x04\0\x0dh\
-ttp-response\x03\0\x0b\x01ks\x01r\x06\x08order-ids\x05money\x07\x06methods\x0cca\
-llback-urls\x09bank-mode\x0d\x0binstruction\x0d\x04\0\x14create-payment-input\x03\
-\0\x0e\x01r\x02\x08order-ids\x05money\x07\x04\0\x0dpayment-input\x03\0\x10\x01r\x03\
-\x08order-ids\x09refund-ids\x05money\x07\x04\0\x0crefund-input\x03\0\x12\x01r\x05\
-\x06methods\x09raw-query\x08\x07headers\x05\x04body\x08\x09source-ip\x0d\x04\0\x14\
-route-callback-input\x03\0\x14\x01r\x03\x08order-ids\x05money\x07\x03raw\x15\x04\
-\0\x0ecallback-input\x03\0\x16\x01m\x05\x07pending\x04paid\x06closed\x06failed\x07\
-unknown\x04\0\x0epayment-status\x03\0\x18\x01m\x04\x07pending\x09succeeded\x06fa\
-iled\x07unknown\x04\0\x0drefund-status\x03\0\x1a\x01k\x01\x01r\x08\x08order-ids\x0b\
-upstream-ids\x05money\x07\x06status\x19\x03url\x0d\x06qrcode\x0d\x07paid-at\x1c\x0a\
-expires-at\x1c\x04\0\x0epayment-output\x03\0\x1d\x01r\x05\x08order-ids\x09refund\
--ids\x12upstream-refund-ids\x05money\x07\x06status\x1b\x04\0\x0drefund-output\x03\
-\0\x1f\x01r\x01\x08order-ids\x04\0\x15route-callback-output\x03\0!\x01r\x06\x08e\
-vent-ids\x08order-ids\x0bupstream-ids\x05money\x07\x06status\x19\x03ack\x0c\x04\0\
-\x0fcallback-output\x03\0#\x01p\x0c\x01r\x02\x05input\x0f\x09responses%\x04\0\x0b\
-create-call\x03\0&\x01r\x02\x05input\x11\x09responses%\x04\0\x0cpayment-call\x03\
-\0(\x01r\x02\x05input\x13\x09responses%\x04\0\x0brefund-call\x03\0*\x01r\x02\x05\
-input\x15\x09responses%\x04\0\x0aroute-call\x03\0,\x01r\x02\x05input\x17\x09resp\
-onses%\x04\0\x0dcallback-call\x03\0.\x01q\x04\x07payment\x01\x1e\0\x06refund\x01\
-\x20\0\x05route\x01\"\0\x08callback\x01$\0\x04\0\x06output\x03\00\x01r\x02\x05va\
-lue1\x04code\x0d\x04\0\x0acompletion\x03\02\x01q\x04\x09completed\x013\0\x08reje\
-cted\x01s\0\x07unknown\x01\x0d\0\x05error\x01\x0d\0\x04\0\x10operation-result\x03\
-\04\x01q\x02\x07request\x01\x0a\0\x06result\x015\0\x04\0\x04step\x03\06\x04\0\x1a\
-kaivo:upstream/types@3.0.0\x05\x02\x02\x03\0\x01\x0bcreate-call\x02\x03\0\x01\x0c\
-payment-call\x02\x03\0\x01\x0brefund-call\x02\x03\0\x01\x0aroute-call\x02\x03\0\x01\
-\x0dcallback-call\x02\x03\0\x01\x04step\x01B\x18\x02\x03\x02\x01\x03\x04\0\x0bcr\
-eate-call\x03\0\0\x02\x03\x02\x01\x04\x04\0\x0cpayment-call\x03\0\x02\x02\x03\x02\
-\x01\x05\x04\0\x0brefund-call\x03\0\x04\x02\x03\x02\x01\x06\x04\0\x0aroute-call\x03\
-\0\x06\x02\x03\x02\x01\x07\x04\0\x0dcallback-call\x03\0\x08\x02\x03\x02\x01\x08\x04\
-\0\x04step\x03\0\x0a\x01@\x01\x04call\x01\0\x0b\x04\0\x0ecreate-payment\x01\x0c\x01\
-@\x01\x04call\x03\0\x0b\x04\0\x0dquery-payment\x01\x0d\x04\0\x0dclose-payment\x01\
-\x0d\x01@\x01\x04call\x05\0\x0b\x04\0\x06refund\x01\x0e\x04\0\x0cquery-refund\x01\
-\x0e\x01@\x01\x04call\x07\0\x0b\x04\0\x0eroute-callback\x01\x0f\x01@\x01\x04call\
-\x09\0\x0b\x04\0\x0fverify-callback\x01\x10\x04\0\x1akaivo:upstream/trade@3.0.0\x05\
-\x09\x04\0!kaivo:upstream/trade-plugin@3.0.0\x04\0\x0b\x12\x01\0\x0ctrade-plugin\
-\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.262.0\x10\
-wit-bindgen-rust\x060.63.0";
+ttp-response\x03\0\x0b\x01ks\x01r\x08\x08order-ids\x05money\x07\x06methods\x0cca\
+llback-urls\x09bank-mode\x0d\x0binstruction\x0d\x09client-ip\x0d\x06device\x0d\x04\
+\0\x14create-payment-input\x03\0\x0e\x01r\x02\x08order-ids\x05money\x07\x04\0\x0d\
+payment-input\x03\0\x10\x01r\x03\x08order-ids\x09refund-ids\x05money\x07\x04\0\x0c\
+refund-input\x03\0\x12\x01r\x05\x06methods\x09raw-query\x08\x07headers\x05\x04bo\
+dy\x08\x09source-ip\x0d\x04\0\x14route-callback-input\x03\0\x14\x01r\x03\x08orde\
+r-ids\x05money\x07\x03raw\x15\x04\0\x0ecallback-input\x03\0\x16\x01m\x05\x07pend\
+ing\x04paid\x06closed\x06failed\x07unknown\x04\0\x0epayment-status\x03\0\x18\x01\
+m\x04\x07pending\x09succeeded\x06failed\x07unknown\x04\0\x0drefund-status\x03\0\x1a\
+\x01k\x01\x01r\x08\x08order-ids\x0bupstream-ids\x05money\x07\x06status\x19\x03ur\
+l\x0d\x06qrcode\x0d\x07paid-at\x1c\x0aexpires-at\x1c\x04\0\x0epayment-output\x03\
+\0\x1d\x01r\x05\x08order-ids\x09refund-ids\x12upstream-refund-ids\x05money\x07\x06\
+status\x1b\x04\0\x0drefund-output\x03\0\x1f\x01r\x01\x08order-ids\x04\0\x15route\
+-callback-output\x03\0!\x01r\x06\x08event-ids\x08order-ids\x0bupstream-ids\x05mo\
+ney\x07\x06status\x19\x03ack\x0c\x04\0\x0fcallback-output\x03\0#\x01p\x0c\x01r\x02\
+\x05input\x0f\x09responses%\x04\0\x0bcreate-call\x03\0&\x01r\x02\x05input\x11\x09\
+responses%\x04\0\x0cpayment-call\x03\0(\x01r\x02\x05input\x13\x09responses%\x04\0\
+\x0brefund-call\x03\0*\x01r\x02\x05input\x15\x09responses%\x04\0\x0aroute-call\x03\
+\0,\x01r\x02\x05input\x17\x09responses%\x04\0\x0dcallback-call\x03\0.\x01q\x04\x07\
+payment\x01\x1e\0\x06refund\x01\x20\0\x05route\x01\"\0\x08callback\x01$\0\x04\0\x06\
+output\x03\00\x01r\x02\x05value1\x04code\x0d\x04\0\x0acompletion\x03\02\x01q\x04\
+\x09completed\x013\0\x08rejected\x01s\0\x07unknown\x01\x0d\0\x05error\x01\x0d\0\x04\
+\0\x10operation-result\x03\04\x01q\x02\x07request\x01\x0a\0\x06result\x015\0\x04\
+\0\x04step\x03\06\x04\0\x1akaivo:upstream/types@3.0.0\x05\x02\x02\x03\0\x01\x0bc\
+reate-call\x02\x03\0\x01\x0cpayment-call\x02\x03\0\x01\x0brefund-call\x02\x03\0\x01\
+\x0aroute-call\x02\x03\0\x01\x0dcallback-call\x02\x03\0\x01\x04step\x01B\x18\x02\
+\x03\x02\x01\x03\x04\0\x0bcreate-call\x03\0\0\x02\x03\x02\x01\x04\x04\0\x0cpayme\
+nt-call\x03\0\x02\x02\x03\x02\x01\x05\x04\0\x0brefund-call\x03\0\x04\x02\x03\x02\
+\x01\x06\x04\0\x0aroute-call\x03\0\x06\x02\x03\x02\x01\x07\x04\0\x0dcallback-cal\
+l\x03\0\x08\x02\x03\x02\x01\x08\x04\0\x04step\x03\0\x0a\x01@\x01\x04call\x01\0\x0b\
+\x04\0\x0ecreate-payment\x01\x0c\x01@\x01\x04call\x03\0\x0b\x04\0\x0dquery-payme\
+nt\x01\x0d\x04\0\x0dclose-payment\x01\x0d\x01@\x01\x04call\x05\0\x0b\x04\0\x06re\
+fund\x01\x0e\x04\0\x0cquery-refund\x01\x0e\x01@\x01\x04call\x07\0\x0b\x04\0\x0er\
+oute-callback\x01\x0f\x01@\x01\x04call\x09\0\x0b\x04\0\x0fverify-callback\x01\x10\
+\x04\0\x1akaivo:upstream/trade@3.0.0\x05\x09\x04\0!kaivo:upstream/trade-plugin@3\
+.0.0\x04\0\x0b\x12\x01\0\x0ctrade-plugin\x03\0\0\0G\x09producers\x01\x0cprocesse\
+d-by\x02\x0dwit-component\x070.262.0\x10wit-bindgen-rust\x060.63.0";
         };
     };
 }

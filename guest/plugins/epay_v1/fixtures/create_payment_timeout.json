@@ -1,0 +1,44 @@
+{
+  "name": "create_payment/timeout",
+  "source": "recorded_upstream_sim_loopback",
+  "operation": "create_payment",
+  "input": {
+    "callback_url": "http://127.0.0.1:56172/callback",
+    "client_ip": "203.0.113.7",
+    "method": "alipay",
+    "money": {
+      "amount": "12345",
+      "currency": "CNY"
+    },
+    "order_id": "test_20261126050313779510000_create_payment_timeout"
+  },
+  "config": {
+    "gateway": "http://127.0.0.1:56136",
+    "pid": "1001",
+    "product_name": "Kaivo 测试商品"
+  },
+  "time": "2026-11-26T05:03:13.77951Z",
+  "random_seed": "b25seS10ZXN0LXJlY29yZGVkLWVudHJvcHktMzJieXQ=",
+  "exchanges": [
+    {
+      "error": "timeout",
+      "request": {
+        "body": "Y2xpZW50aXA9MjAzLjAuMTEzLjcmbW9uZXk9MTIzLjQ1Jm5hbWU9S2Fpdm8rJUU2JUI1JThCJUU4JUFGJTk1JUU1JTk1JTg2JUU1JTkzJTgxJm5vdGlmeV91cmw9aHR0cCUzQSUyRiUyRjEyNy4wLjAuMSUzQTU2MTcyJTJGY2FsbGJhY2smb3V0X3RyYWRlX25vPXRlc3RfMjAyNjExMjYwNTAzMTM3Nzk1MTAwMDBfY3JlYXRlX3BheW1lbnRfdGltZW91dCZwaWQ9MTAwMSZzaWduPVRFU1RfU0lHTkFUVVJFX1JFR0VORVJBVEVEX0FUX1JFUExBWSZzaWduX3R5cGU9TUQ1JnR5cGU9YWxpcGF5",
+        "headers": {
+          "Content-Type": [
+            "application/x-www-form-urlencoded"
+          ]
+        },
+        "method": "POST",
+        "url": "http://127.0.0.1:56136/mapi.php"
+      }
+    }
+  ],
+  "expected": {
+    "category": "unknown",
+    "error_code": "transport_error",
+    "requests": 1,
+    "responses": 0,
+    "steps": 1
+  }
+}

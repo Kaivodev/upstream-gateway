@@ -377,7 +377,7 @@ fn resign(
     }
     Ok(())
 }
-fn normalized(r: &HttpRequest) -> Value {
+pub fn normalized(r: &HttpRequest) -> Value {
     let mut r = r.clone();
     for (n, v) in &mut r.headers {
         if n.eq_ignore_ascii_case("X-Signature") {
@@ -469,6 +469,8 @@ impl Transport for Recorded {
 }
 pub fn required_scenarios(op: &str) -> &'static [&'static str] {
     match op {
+        // Some create APIs, including EPay mapi, return no amount to compare.
+        "create_payment" => &["success", "rejected", "signature_error", "timeout"],
         "route_callback" => &["success", "malformed"],
         "verify_callback" => &["success", "signature_error", "amount_mismatch"],
         _ => &[

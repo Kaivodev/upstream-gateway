@@ -1,8 +1,8 @@
 {
   "module": "github.com/Kaivodev/protobuf",
-  "version": "v0.17.0",
+  "version": "v0.18.0",
   "files": {
-    "aipay/upstream/v1/upstream_service.proto": "0ea9df68817139dba2a8d9fc8262620cc9cc1d437f15554ca74fb4c8d09d74f7",
+    "aipay/upstream/v1/upstream_service.proto": "bcb5e35748de2460819efaf0cdd101155d61573129e0249b241b05fc1cdc4dce",
     "aipay/authz/v1/policy.proto": "1c67fc033cceaf5d259e059277690e7f749fe2e700ace143953bfda0cede3ec9"
   }
 }

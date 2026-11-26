@@ -343,6 +343,8 @@ impl PackageCase {
                 callback_url: v["callback_url"].as_str().unwrap().into(),
                 bank_mode: None,
                 instruction: Some("url".into()),
+                client_ip: v["client_ip"].as_str().map(str::to_owned),
+                device: v["device"].as_str().map(str::to_owned),
             }),
         }
     }

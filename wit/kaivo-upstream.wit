@@ -22,6 +22,7 @@ interface types {
     record create-payment-input {
         order-id: string, money: money, method: string, callback-url: string,
         bank-mode: option<string>, instruction: option<string>,
+        client-ip: option<string>, device: option<string>,
     }
     record payment-input { order-id: string, money: money }
     record refund-input { order-id: string, refund-id: string, money: money }

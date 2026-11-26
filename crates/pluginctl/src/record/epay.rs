@@ -1,5 +1,5 @@
 use super::{
-    CaptureEnv, Evidence, Listener, SEED,
+    CaptureEnv, CaptureTransport, Evidence, Listener, SEED,
     http::{Callback, FORM, Simulator},
 };
 use anyhow::{Context, Result, ensure};
@@ -78,18 +78,7 @@ impl Account {
             "amount_mismatch" => json!({"callback_amount":12346}),
             _ => json!({}),
         };
-        let path = format!("/__test/scenarios/epay-demo/{order}");
-        let response = sim.request(
-            "PUT",
-            &path,
-            Some(token),
-            Some("application/json"),
-            &serde_json::to_vec(&settings)?,
-        )?;
-        ensure!(
-            (200..300).contains(&response.status),
-            "test scenario setup failed"
-        );
+        set_scenario(sim, token, order, &settings)?;
         let mut fields = BTreeMap::from([
             ("pid", self.pid.as_str()),
             ("type", "alipay"),
@@ -128,6 +117,22 @@ impl Account {
         );
         Ok(())
     }
+}
+
+fn set_scenario(sim: &Simulator, token: &str, order: &str, settings: &Value) -> Result<()> {
+    let path = format!("/__test/scenarios/epay-demo/{order}");
+    let response = sim.request(
+        "PUT",
+        &path,
+        Some(token),
+        Some("application/json"),
+        &serde_json::to_vec(settings)?,
+    )?;
+    ensure!(
+        (200..300).contains(&response.status),
+        "test scenario setup failed"
+    );
+    Ok(())
 }
 
 pub(super) struct Case {
@@ -206,19 +211,47 @@ impl Case {
     }
 }
 
+fn check_create(scenario: &str, execution: &Execution, exchanges: &[Value]) -> Result<()> {
+    ensure!(
+        exchanges.len() == 1 && execution.requests == 1,
+        "expected one mapi exchange"
+    );
+    let result = execution.result.as_ref().unwrap_or(&Value::Null);
+    let ok = match scenario {
+        "success" => {
+            execution.category == "completed"
+                && result["payment"]["status"] == "pending"
+                && result["payment"]["url"].is_string()
+        }
+        "rejected" => execution.category == "rejected" && result["code"] == "epay_code_-1",
+        "signature_error" => execution.category == "rejected",
+        "timeout" => {
+            execution.category == "unknown"
+                && execution.error_code.as_deref() == Some("transport_error")
+                && exchanges[0]["error"] == "timeout"
+        }
+        _ => false,
+    };
+    ensure!(ok, "unexpected mapi execution for {scenario}");
+    Ok(())
+}
+
 pub(super) fn record(
     p: &mut Package,
     sim: &Simulator,
     origin: &str,
     token: &str,
-    protected: &mut Scanner,
+    protected: &Arc<Mutex<Scanner>>,
 ) -> Result<()> {
+    let operations = ["create_payment", "route_callback", "verify_callback"];
     ensure!(
-        p.manifest
-            .capabilities
-            .iter()
-            .all(|op| matches!(op.as_str(), "route_callback" | "verify_callback")),
-        "unsupported recording capability"
+        p.manifest.capabilities.len() == operations.len()
+            && operations.iter().all(|op| p
+                .manifest
+                .capabilities
+                .iter()
+                .any(|declared| declared == op)),
+        "unsupported recording capabilities"
     );
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
     let timestamp = (now.as_secs().try_into()?, now.subsec_nanos());
@@ -229,7 +262,7 @@ pub(super) fn record(
         timestamp.1
     );
     let account = Arc::new(Account::fetch(sim, token)?);
-    protected.add(&account.key);
+    protected.lock().unwrap().add(&account.key);
     let config = BTreeMap::from([
         ("gateway".into(), origin.to_owned()),
         ("pid".into(), account.pid.clone()),
@@ -238,15 +271,49 @@ pub(super) fn record(
     let host = Host::new(Options::replay(&p.manifest.r#type))?;
     let loaded = host.load(p)?;
     let listener = Listener::start()?;
-    for operation in &p.manifest.capabilities {
+    for operation in operations {
         for &scenario in upstream_host::replay::required_scenarios(operation) {
             let order = format!("test_{stamp}_{operation}_{scenario}");
-            listener.expect(&order);
-            account.pay(sim, token, &listener.url, &order, scenario, protected)?;
-            let callback = listener.wait()?;
-            let mut case =
-                Case::from_notification(operation, scenario, &order, &callback, protected)?;
-            let env = CaptureEnv {
+            let create = operation == "create_payment";
+            let (mut input, callback) = if create {
+                let settings = match scenario {
+                    "rejected" => json!({"create_fault":"reject"}),
+                    "timeout" => json!({"create_fault":"timeout","fault_delay_ms":3000}),
+                    _ => json!({}),
+                };
+                set_scenario(sim, token, &order, &settings)?;
+                let mut input = json!({"order_id":order, "money":{"amount":"12345","currency":"CNY"},
+                    "method":"alipay", "callback_url":listener.url, "client_ip":"203.0.113.7"});
+                if scenario == "success" {
+                    input["device"] = json!("pc");
+                }
+                (input, None)
+            } else {
+                listener.expect(&order);
+                account.pay(
+                    sim,
+                    token,
+                    &listener.url,
+                    &order,
+                    scenario,
+                    &mut protected.lock().unwrap(),
+                )?;
+                let case = Case::from_notification(
+                    operation,
+                    scenario,
+                    &order,
+                    &listener.wait()?,
+                    &mut protected.lock().unwrap(),
+                )?;
+                (case.input.clone(), Some(case))
+            };
+            let env = Arc::new(CaptureEnv {
+                transport: create.then(|| CaptureTransport {
+                    sim: *sim,
+                    corrupt_signature: scenario == "signature_error",
+                    exchanges: Mutex::default(),
+                }),
+                protected: protected.clone(),
                 config: config.clone(),
                 keys: account.clone(),
                 now: timestamp,
@@ -256,26 +323,40 @@ pub(super) fn record(
                         .try_into()
                         .expect("32-byte recording seed"),
                 )),
-            };
+            });
             let execution = host.execute(
                 &loaded,
                 operation,
-                &serde_json::to_vec(&case.input)?,
-                Arc::new(env),
+                &serde_json::to_vec(&input)?,
+                env.clone(),
                 Default::default(),
             );
-            case.check_result(scenario, &execution)?;
-            case.input["raw_query"] = json!(BASE64_STANDARD.encode(case.sanitized));
+            let mut exchanges = Vec::new();
+            let (source, resign) = if let Some(case) = callback {
+                case.check_result(scenario, &execution)?;
+                input["raw_query"] = json!(BASE64_STANDARD.encode(case.sanitized));
+                (case.source, case.resign)
+            } else {
+                exchanges =
+                    std::mem::take(&mut *env.transport.as_ref().unwrap().exchanges.lock().unwrap());
+                check_create(scenario, &execution, &exchanges)?;
+                let source = if scenario == "signature_error" {
+                    "recorded_upstream_sim_loopback_with_corrupted_request_signature"
+                } else {
+                    "recorded_upstream_sim_loopback"
+                };
+                (source, false)
+            };
             let fixture = Evidence {
                 name: format!("{operation}/{scenario}"),
-                source: case.source,
+                source,
                 operation,
-                input: case.input,
+                input,
                 config: &config,
                 time: &time,
                 random_seed: SEED,
-                test_only_resign_callback: case.resign,
-                exchanges: [],
+                test_only_resign_callback: resign,
+                exchanges,
                 expected: execution,
             };
             let mut raw = serde_json::to_vec_pretty(&fixture)?;

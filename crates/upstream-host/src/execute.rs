@@ -4,7 +4,7 @@ use crate::{
     http::{self, Check},
     json::{object, projected_len},
     package::{media, token},
-    state::State,
+    state::{Scanner, State},
     types::*,
 };
 use base64::prelude::*;
@@ -80,10 +80,21 @@ pub(crate) fn input_schema(op: &str, v: &Value) -> Check<()> {
         }
     }
     if op == "create_payment" {
-        fields.extend(["method", "callback_url", "bank_mode", "instruction"]);
+        fields.extend([
+            "method",
+            "callback_url",
+            "bank_mode",
+            "instruction",
+            "client_ip",
+            "device",
+        ]);
         if ["method", "callback_url"]
             .iter()
             .any(|k| v[k].as_str().is_none_or(str::is_empty))
+            || v.get("client_ip")
+                .is_some_and(|v| !v.as_str().is_some_and(http::valid_client_ip))
+            || v.get("device")
+                .is_some_and(|v| !v.as_str().is_some_and(http::valid_device))
         {
             return Err("input_json");
         }
@@ -381,6 +392,7 @@ impl Host {
         let started = Instant::now();
         let mut out = Execution::default();
         let mut s = State::new(l.manifest.clone(), env, cancel, op);
+        let mut private_logs = Scanner::default();
         let run = (|| -> Check<()> {
             if l.manifest.r#type != self.options.plugin_type
                 || !l.manifest.capabilities.iter().any(|x| x == op)
@@ -398,6 +410,14 @@ impl Host {
             let mut value = object(raw).map_err(|_| "input_json")?;
             let i = input(op, &value, &s)?;
             match &i {
+                Input::Create(c) => {
+                    for field in [c.client_ip.as_deref(), c.device.as_deref()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        private_logs.add(field.as_bytes());
+                    }
+                }
                 Input::Route(r) => value["headers"] = headers_value(&r.headers),
                 Input::Callback(c) => value["headers"] = headers_value(&c.raw.headers),
                 _ => {}
@@ -497,7 +517,8 @@ impl Host {
                             return Err("output_limit");
                         }
                         if v["code"].as_str().is_some_and(|c| {
-                            c.len() > 128
+                            value["client_ip"].as_str().is_some_and(|ip| c.contains(ip))
+                                || c.len() > 128
                                 || c.chars().any(|ch| ch.is_whitespace() || ch.is_control())
                         }) {
                             return Err("output_structure");
@@ -536,9 +557,7 @@ impl Host {
         if run == Err("secret_leak") {
             s.env.alert("secret_leak");
         } else {
-            for event in &s.logs {
-                s.env.log(event)
-            }
+            s.flush_logs(&private_logs);
         }
         out.elapsed = started.elapsed();
         out
@@ -641,6 +660,89 @@ mod tests {
             Ok((0, 123))
         }
     }
+    #[test]
+    fn buyer_metadata_stays_out_of_plugin_logs() {
+        use crate::imports::Host as _;
+        #[derive(Default)]
+        struct Events(std::sync::Mutex<Vec<Value>>);
+        impl Environment for Events {
+            fn log(&self, event: &Value) {
+                self.0.lock().unwrap().push(event.clone());
+            }
+        }
+        let events = Arc::new(Events::default());
+        let manifest = Manifest::parse(&crate::json::canonical(&crate::tests::manifest())).unwrap();
+        let mut state = State::new(
+            Arc::new(manifest),
+            events.clone(),
+            Default::default(),
+            "create_payment",
+        );
+        state.deadline = Instant::now() + std::time::Duration::from_secs(5);
+        let mut private = Scanner::default();
+        private.add(b"1.2.3.4");
+        private.add(b"pc");
+        state.log("info".into(), "ready".into(), vec![]).unwrap();
+        state.flush_logs(&private);
+        assert_eq!(events.0.lock().unwrap().len(), 1);
+        for piece in ["1.2.", "3.4"] {
+            state
+                .log(
+                    "info".into(),
+                    "progress".into(),
+                    vec![("detail".into(), piece.into())],
+                )
+                .unwrap();
+        }
+        state.flush_logs(&private);
+        assert_eq!(events.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn create_validates_json_before_passing_buyer_fields_to_wit() {
+        let manifest = Manifest::parse(&crate::json::canonical(&crate::tests::manifest())).unwrap();
+        let state = State::new(
+            Arc::new(manifest),
+            Arc::new(Clock),
+            Default::default(),
+            "create_payment",
+        );
+        let base = json!({"order_id":"order","money":{"amount":"1","currency":"CNY"},"method":"alipay","callback_url":"http://localhost/cb"});
+        for (ip, device) in [
+            (None, None),
+            (Some("1.2.3.4"), Some("pc")),
+            (Some("2001:db8::1"), Some("a1_b")),
+        ] {
+            let mut v = base.clone();
+            if let Some(ip) = ip {
+                v["client_ip"] = json!(ip);
+            }
+            if let Some(device) = device {
+                v["device"] = json!(device);
+            }
+            let Input::Create(i) = input("create_payment", &v, &state).unwrap() else {
+                panic!("expected create")
+            };
+            assert_eq!(i.client_ip.as_deref(), ip);
+            assert_eq!(i.device.as_deref(), device);
+        }
+        for (field, bad) in [
+            ("client_ip", json!("2001:DB8::1")),
+            ("client_ip", json!("::ffff:1.2.3.4")),
+            ("client_ip", json!("1.2.3.4:80")),
+            ("client_ip", json!("")),
+            ("client_ip", json!(7)),
+            ("device", json!("PC")),
+            ("device", json!("")),
+            ("device", json!("a".repeat(33))),
+            ("device", Value::Null),
+        ] {
+            let mut v = base.clone();
+            v[field] = bad;
+            assert_eq!(input_schema("create_payment", &v), Err("input_json"));
+        }
+    }
+
     #[test]
     fn payment_time_and_instruction_boundaries() {
         let host = Host::new(Options::production("payment")).unwrap();

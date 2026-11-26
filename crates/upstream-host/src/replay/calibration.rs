@@ -158,6 +158,45 @@ impl ExpectedRequest {
     }
 }
 
+// The EPay plugin takes money from its input and uses out_trade_no on the wire.
+fn oversized_mapi(f: &mut Fixture) -> Result<()> {
+    let x = &mut f.exchanges[0];
+    let mut req = ExpectedRequest::read(&x.request)?;
+    let order = "o".repeat(MAX_ID);
+    f.input["order_id"] = json!(order);
+    f.input["money"]["amount"] = json!(i64::MAX.to_string());
+    let output = &mut f.expected.result.as_mut().context("expected payment")?["payment"];
+    output["order_id"] = json!(order);
+    output["money"] = f.input["money"].clone();
+    req.set("out_trade_no", &order);
+    req.set(
+        "money",
+        &format!("{}.{:02}", i64::MAX / 100, i64::MAX % 100),
+    );
+    req.set("clientip", f.input["client_ip"].as_str().unwrap());
+    req.set("device", f.input["device"].as_str().unwrap());
+    let mut url = f.input["callback_url"]
+        .as_str()
+        .context("expected callback URL")?
+        .to_owned();
+    req.set("notify_url", &url);
+    let padding = BODY
+        .checked_sub(req.encode()?.len() - MARK.len() + 32)
+        .context("mapi request budget")?;
+    url.push_str(&"p".repeat(padding));
+    req.set("notify_url", &url);
+    f.input["callback_url"] = json!(url);
+    x.request.body = BASE64_STANDARD.encode(req.encode()?);
+    let response = x.response.as_mut().context("expected mapi response")?;
+    let mut body = BASE64_STANDARD.decode(&response.body)?;
+    body.resize(BODY, b' ');
+    response.body = BASE64_STANDARD.encode(body);
+    response
+        .headers
+        .insert("content-length".into(), vec![BODY.to_string()]);
+    Ok(())
+}
+
 fn oversized_exchange(f: &mut Fixture) -> Result<()> {
     let x = &mut f.exchanges[0];
     let r = x.response.as_mut().context("missing recorded response")?;
@@ -261,17 +300,29 @@ impl Replay {
             let mut cases = vec![(f.clone(), f.name.clone(), false)];
             if f.name.ends_with("/success") {
                 let mut large = f.clone();
-                if f.operation.ends_with("callback") {
+                let create = f.operation == "create_payment";
+                let mapi = create && self.loaded.manifest.code == "epay_v1";
+                if create {
+                    large.input["client_ip"] =
+                        json!(std::net::Ipv6Addr::from(u128::MAX).to_string());
+                    large.input["device"] = json!("d".repeat(32));
+                }
+                if mapi {
+                    oversized_mapi(&mut large)?
+                } else if f.operation.ends_with("callback") {
                     oversized_callback(&mut large, &*keys)?
                 } else {
                     oversized_exchange(&mut large)?
                 }
-                if f.operation == "create_payment" {
+                if create {
                     let mut boundary = large.clone();
-                    boundary.input["method"] = json!("m");
+                    let field = if mapi { "callback_url" } else { "method" };
+                    let prefix = if mapi { "http://127.0.0.1/" } else { "" };
+                    boundary.input[field] = json!(prefix);
                     let size =
                         crate::json::projected_len(&json!({"input":boundary.input,"responses":[]}));
-                    boundary.input["method"] = json!("m".repeat((1 << 20) - size + 1));
+                    boundary.input[field] =
+                        json!(format!("{prefix}{}", "m".repeat((1 << 20) - size)));
                     boundary.exchanges.clear();
                     boundary.expected = Execution {
                         category: "not_sent".into(),

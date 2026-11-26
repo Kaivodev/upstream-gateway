@@ -9,6 +9,17 @@ pub fn id(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
+pub fn valid_client_ip(s: &str) -> bool {
+    s.parse::<std::net::IpAddr>().is_ok_and(|ip| {
+        ip.to_string() == s
+            && !matches!(ip, std::net::IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some())
+    })
+}
+pub fn valid_device(s: &str) -> bool {
+    (1..=32).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
 pub fn url(s: &str, http: bool) -> Check<&str> {
     parse_url(s, http, true)
 }

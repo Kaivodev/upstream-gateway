@@ -254,7 +254,7 @@ The builder compares build-config.json with the copy embedded in pluginctl. That
 
 ## UG-3 gateway service
 
-The host workspace contains the twelve library RPCs and the upstream contract released in protobuf v0.17.0 (commit `8442a37`). The PostgreSQL journal fences executors, commits each request before transport, and seals the terminal response and exchange in one transaction. Immutable credential versions use instance-specific envelope encryption. Routing checks write-time credential fingerprints without opening the credential envelope. The live HTTP/1.1 transport pins the validated destination through direct TLS and CONNECT.
+The host workspace contains the twelve library RPCs and the upstream contract released in protobuf v0.18.0 (commit `fd769b1`). The PostgreSQL journal fences executors, commits each request before transport, and seals the terminal response and exchange in one transaction. Immutable credential versions use instance-specific envelope encryption. Routing checks write-time credential fingerprints without opening the credential envelope. The live HTTP/1.1 transport pins the validated destination through direct TLS and CONNECT.
 
 Phase one acceptance used Rust 1.99.1 and PostgreSQL 18.7.
 
@@ -302,7 +302,7 @@ On 2026-11-22 the reviewer reran the full acceptance suite on the merged working
 - `make integration` passed 14 database tests and 13 binary end-to-end tests, including both SIGKILL cases.
 - `make calibrate stress bench` passed. The maximum step remained 24,154,643 fuel. Each package produced 16 identical stress reports.
 
-`proto/source.json` records the released protobuf tag v0.17.0 (commit `8442a37`). For B0, `make proto-sync` preserved both files byte for byte, and `make proto-check` passed locally and against the tag. Temporary copies rejected invalid versions, a one-byte change and a missing tag. Both bindings regenerated without drift, and `make check` passed. In UG-4, payment and reconciliation ran the full stage 2 demo through a trade and a verification instance on the local mTLS stack. Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
+At B0, `proto/source.json` recorded the released protobuf tag v0.17.0 (commit `8442a37`). For B0, `make proto-sync` preserved both files byte for byte, and `make proto-check` passed locally and against the tag. Temporary copies rejected invalid versions, a one-byte change and a missing tag. Both bindings regenerated without drift, and `make check` passed. In UG-4, payment and reconciliation ran the full stage 2 demo through a trade and a verification instance on the local mTLS stack. Hosted CI, including the two-host component comparison and the PostgreSQL job, has not run yet.
 
 ## UG-7 EPay V1 callbacks
 
@@ -312,7 +312,7 @@ For EPay replay, a marked callback with an empty body, nonempty query and absent
 
 The recorder uses the authenticated test control endpoint on an explicit IPv4 or IPv6 loopback socket. Each HTTP/1.1 request uses a fresh connection with five-second timeouts and a 1 MiB response limit. Control credentials stay in memory. The recorder independently signs a simulator purchase, checks the payment URL's origin, acknowledges the raw notification, and runs the component with the simulator key to obtain its expected execution. It scans the full fixture set for credentials and signatures, including their hex and Base64 encodings and the decoded wire data. It publishes the JSON files to an empty or new directory after strict fixture decoding and offline replay with ephemeral keys.
 
-EPay V1 0.1.0 declares route_callback and verify_callback. Payment creation still needs a buyer IP in the WIT input. UG-6 work includes adding client-ip and device, recording create_payment cases and synchronizing payment's callback policy. An EPay urlscheme has no mapping to the URL instruction.
+In UG-7, EPay V1 0.1.0 declared route_callback and verify_callback. Payment creation depended on adding the buyer IP to WIT. An EPay urlscheme has no mapping to the URL instruction.
 
 The trial and source fixture sets each passed all five cases on Apple Silicon. Both success cases completed. Malformed routing and invalid-signature verification returned `not_sent/plugin_error`. The signed amount mismatch returned `not_sent/amount_mismatch`. Every case used one host step and zero exchanges. Both simulator processes were stopped after capture.
 
@@ -331,3 +331,45 @@ The trial and source fixture sets each passed all five cases on Apple Silicon. B
 - `make plugins replay repro` built all five packages, passed all 85 cases and reproduced the complete packages byte for byte in two independent source directories. For the four rebuilt simulator packages, the reports differed from the prior files only in package SHA-256. Their build manifests carried the updated source-tree digest, and their case arrays were identical. The EPay replay report SHA-256 was `15f2143f41294c11d1ec50e901a0c3bfdf56391af654554c76a4b5fbe562782a`.
 - `make deny vet` ran offline with the cached advisory database, `cargo deny --locked --offline` and `cargo vet --locked --frozen` with a temporary cache. Both workspaces passed advisories, bans, licenses and sources. The host reported duplicate-version warnings. Guest vet reported 12 fully audited packages.
 - `make bench calibrate stress` passed for all five packages. In this local 100-iteration release run, EPay verification took 197,792 ns at p50 and 357,916 ns at p99 with 1,179,648 peak guest bytes. The highest EPay calibration step used 835,791 fuel on the maximum accepted verification query. Each package produced 16 concurrent reports identical to its serial baseline.
+
+## UG-6 buyer IP and device
+
+The gateway vendors protobuf v0.18.0 (`fd769b1`). Compared with v0.17.0, only the two optional fields and their comments in CreatePaymentInput changed. The authorization policy is byte-identical. WIT adds client-ip and device after instruction. The package stays at kaivo:upstream@3.0.0 because v3 has not entered production. Both worlds export the types interface. All five previous components were tested with the new host and rejected with `component does not match declared WIT world`.
+
+The gateway and host share the buyer-field validators. A present buyer IP must round-trip byte for byte through the standard IP parser and formatter. IPv4-mapped IPv6, ports and zone identifiers are invalid. A present device contains 1–32 lowercase ASCII letters, digits or underscores. Absent fields are omitted from host JSON. The WIT call preserves both options. Validation errors contain fixed codes. The host screens buffered guest log messages and fields for buyer metadata before forwarding them. Alert codes and numeric execution metrics carry no input values.
+
+The canonical CreatePayment request appends field 7 and then field 8. Each absent field contributes one zero byte. Each present field contributes one byte of value 1 followed by the big-endian u32 byte length and UTF-8 bytes. Even with both absent, the new encoding adds two zero bytes. Retrying a pre-upgrade order under its existing idempotency key can therefore conflict with its stored request digest. Exchange evidence includes that digest and the journal's actual HTTP request. An independent Python encoder produced the SHA-256 vector `e1c772272dfcc13838f85da9d19fcfc8ffb1b17d2c53b5a7ec1a7796dba579b1` for the two-field example in `create_buyer_fields_validate_and_bind_the_request_digest`.
+
+EPay V1 0.1.0 requires client_ip to sign and dispatch a mapi purchase and sends device when present. The recorded success response supplies a payment URL and the plugin reports pending. EPay returns no amount in this response, so the payment output echoes the input amount. Admission requires success, rejected, signature_error and timeout for create_payment. Supplied amount_mismatch cases still undergo expectation checks and replay. Output amount checks still apply to every plugin.
+
+The recorder installs each order's test scenario, executes the real component with the simulator key and records the exchange. It captures the four creates before the five callback cases. Its mapi transport accepts a form POST to the selected HTTP loopback socket, opens a fresh connection, sends Connection: close, and reads at most 1 MiB of response body within a two-second deadline. The signature-error case changes only the outgoing form signature to 32 zeroes. The captured request uses replay's signature marker. A three-second simulator delay produces a timeout exchange. The pre-publication scan covers the simulator token, key, generated request and callback signatures, headers, and decoded wire bodies. Strict decoding and replay with ephemeral keys run before publication.
+
+| Operation | Scenario | Category | Host error | Upstream code |
+| --- | --- | --- | --- | --- |
+| create_payment | success | completed (pending, URL) | — | — |
+| create_payment | rejected | rejected | — | epay_code_-1 |
+| create_payment | signature_error | rejected | — | epay_code_-1 |
+| create_payment | timeout | unknown | transport_error | — |
+| route_callback | success | completed | — | — |
+| route_callback | malformed | not_sent | plugin_error | — |
+| verify_callback | success | completed | — | — |
+| verify_callback | signature_error | not_sent | plugin_error | — |
+| verify_callback | amount_mismatch | not_sent | amount_mismatch | — |
+
+The final temporary capture and installed source set matched byte for byte. Both simulator runs stopped after capture. The four simulator fixture directories have no changes. The three relaxations tracked under A136, EPay order queries and refunds, and epay_v1_verify remain open.
+
+| Package | Component bytes | Component SHA-256 | Fixture-set SHA-256 |
+| --- | ---: | --- | --- |
+| epay_v1 | 129,546 | `e87ebb57f612a26ff6547ec9ed1809f393042bcce94033c6bdff5a0b4c842cc5` | `a5002eaaf1312ce942acacbc7c1b58d8454a2d137902676164ca0241bd9c54d0` |
+| sim_form_md5 | 124,760 | `4576b180aee36d2a6d0e68602dbaf7d3901bfc79c28217c3af620d80ddd4d6a9` | `6fa220ad2cc0ca5787c6a9ad07e480e227172f715d24687ac664cf05fdd3104f` |
+| sim_form_md5_verify | 94,830 | `32ff97d5f420bfdb65da48b1f491c3972ba54f6a2569e2dc763f60d6dd795513` | `fe1720960f3109f0dca94972b4645e6c25b0bcebed537285bc850a7cd4dcf5c0` |
+| sim_json_rsa | 115,515 | `65319b01b15532c9f38a24cb58e8172c8d380222f7c15cee8eeb8d9ecb064a9b` | `0825720e59c8a58ec16fa62dd84fdeaf5f09de287905f269ae750b92440a50f4` |
+| sim_json_rsa_verify | 93,575 | `2faeb40d9c46ca8fe3234b33a08159824a7aeb455ea61cdd836e61b1205901db` | `ea422021b85216fa141fe26337158f0d39278b9a77b64460dfe143186b58d262` |
+
+- `make proto-sync` and `make proto-check` passed against the local v0.18.0 tag. The digest-only check also passed. Repeating `make bindings` reproduced both updated SDK source files byte for byte.
+- `make check` passed both workspaces' checks, including 11 database-independent gateway tests, 19 host tests, 11 CLI unit tests, four CLI integration tests and 16 EPay protocol tests. The gateway digest tests compare six presence/value combinations against independently computed SHA-256 vectors.
+- `make plugins replay` built all five components and passed 89 cases. The four simulator packages' 80 case records matched their previous reports exactly. The installed EPay fixture-set hash matched the final temporary recording. Its replay report SHA-256 was `1584aaf509bf43f8aafab9bfc5e836ebe779022d8218ae7d0490a8836d18b28b`.
+- The first EPay calibration of the 1 MiB call exhausted the guest fuel budget while scanning the callback URL. A byte search for the ASCII query and fragment delimiters preserved URL validation and let the final component reach the expected pre-dispatch `host_io_limit`. The accepted synthetic EPay create has a 39-byte canonical IPv6 address, a 32-byte device and a 256 KiB request and response. All nine recordings were repeated with this component.
+- `make integration` stopped at the environment check with `integration requires AIPAY_TEST_DATABASE_URL`. The 14 PostgreSQL tests and 13 release-binary tests remain unverified in this run.
+- `make repro` reproduced all five complete packages byte for byte across two independent source and build paths. Offline `make deny` passed advisories, bans, licenses and sources in both workspaces, with duplicate-version warnings in the host workspace. Frozen `make vet` reported 12 fully audited guest packages.
+- `make bench calibrate stress` passed for all five packages on aarch64-apple-darwin. The EPay verify_callback benchmark recorded 102,958 ns at p50 and 140,041 ns at p99 over 100 iterations, with 1,179,648 peak guest bytes. EPay's highest single step used 12,621,226 fuel on the pre-dispatch create boundary. The highest across all packages was 24,152,683 for sim_form_md5. Each package produced 16 concurrent reports identical to its serial baseline.

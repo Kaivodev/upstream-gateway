@@ -150,6 +150,10 @@ impl Input {
             Self::Create(v) => {
                 if v.method.is_empty()
                     || v.callback_url.is_empty()
+                    || v.client_ip
+                        .as_deref()
+                        .is_some_and(|s| !http::valid_client_ip(s))
+                    || v.device.as_deref().is_some_and(|s| !http::valid_device(s))
                     || [v.bank_mode.as_ref(), v.instruction.as_ref()]
                         .into_iter()
                         .flatten()
@@ -160,15 +164,19 @@ impl Input {
                 let mut j = order(&mut e, &v.order_id, None, v.money.as_ref())?;
                 e.string(&v.method);
                 e.string(&v.callback_url);
-                e.optional(v.bank_mode.as_deref(), Encoder::string);
-                e.optional(v.instruction.as_deref(), Encoder::string);
+
                 j["method"] = json!(v.method);
                 j["callback_url"] = json!(v.callback_url);
-                if let Some(s) = v.bank_mode {
-                    j["bank_mode"] = json!(s)
-                }
-                if let Some(s) = v.instruction {
-                    j["instruction"] = json!(s)
+                for (field, value) in [
+                    ("bank_mode", v.bank_mode),
+                    ("instruction", v.instruction),
+                    ("client_ip", v.client_ip),
+                    ("device", v.device),
+                ] {
+                    e.optional(value.as_deref(), Encoder::string);
+                    if let Some(s) = value {
+                        j[field] = Value::String(s);
+                    }
                 }
                 j
             }
